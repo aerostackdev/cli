@@ -1,0 +1,17 @@
+{
+  "name": "demo-aerostack",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.7.0",
+    "esbuild": "^0.24.0",
+    "vitest": "~3.0.0"
+  }
+}

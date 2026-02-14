@@ -1,4 +1,4 @@
-# @aerostack/cli
+# aerostack
 
 Aerostack CLI - Zero-config serverless development for Cloudflare.
 
@@ -6,27 +6,27 @@ Aerostack CLI - Zero-config serverless development for Cloudflare.
 
 **npm**
 ```bash
-npm install -g @aerostack/cli
+npm install -g aerostack
 ```
 
 **pnpm**
 ```bash
-pnpm add -g @aerostack/cli
+pnpm add -g aerostack
 ```
 
 **yarn**
 ```bash
-yarn global add @aerostack/cli
+yarn global add aerostack
 ```
 
 **bun**
 ```bash
-bun install -g @aerostack/cli
+bun install -g aerostack
 ```
 
 **npx (no install)**
 ```bash
-npx @aerostack/cli init my-app
+npx aerostack init my-app
 ```
 
 ## Usage

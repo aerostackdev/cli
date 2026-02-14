@@ -1,0 +1,146 @@
+package api
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"os"
+)
+
+func getBaseURL() string {
+	if u := os.Getenv("AEROSTACK_API_URL"); u != "" {
+		return u
+	}
+	return "https://api.aerocall.ai"
+}
+
+type ValidateResponse struct {
+	KeyType     string `json:"keyType"`     // "account" or "project"
+	ProjectID   string `json:"projectId"`   // project key only
+	ProjectName string `json:"projectName"` // project key only
+	Slug        string `json:"slug"`        // project key only
+	URL         string `json:"url"`         // project key only
+	UserID      string `json:"userId"`      // account key only
+	Email       string `json:"email"`       // account key only
+	Name        string `json:"name"`       // account key only
+	Message     string `json:"message"`     // account key hint
+}
+
+type ValidateError struct {
+	Error struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func Validate(apiKey string) (*ValidateResponse, error) {
+	url := getBaseURL() + "/api/v1/cli/validate"
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		var errBody ValidateError
+		_ = json.Unmarshal(body, &errBody)
+		msg := errBody.Error.Message
+		if msg == "" {
+			msg = string(body)
+		}
+		return nil, fmt.Errorf("validate failed (%d): %s", resp.StatusCode, msg)
+	}
+
+	var out ValidateResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+type DeployResponse struct {
+	Success   bool   `json:"success"`
+	ScriptName string `json:"scriptName"`
+	URL       string `json:"url"`
+	Project   struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+	} `json:"project"`
+	Env string `json:"env"`
+}
+
+type DeployError struct {
+	Error struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Details string `json:"details"`
+	} `json:"error"`
+}
+
+func Deploy(apiKey string, workerPath string, env string, projectName string) (*DeployResponse, error) {
+	workerData, err := os.ReadFile(workerPath)
+	if err != nil {
+		return nil, fmt.Errorf("read worker file: %w", err)
+	}
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+
+	_ = w.WriteField("env", env)
+	if projectName != "" {
+		_ = w.WriteField("name", projectName)
+	}
+	part, err := w.CreateFormFile("worker", "worker.js")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := part.Write(workerData); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+
+	url := getBaseURL() + "/api/v1/cli/deploy"
+	req, err := http.NewRequest("POST", url, &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		var errBody DeployError
+		_ = json.Unmarshal(body, &errBody)
+		msg := errBody.Error.Message
+		if msg == "" {
+			msg = string(body)
+		}
+		return nil, fmt.Errorf("deploy failed (%d): %s", resp.StatusCode, msg)
+	}
+
+	var out DeployResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

@@ -35,6 +35,8 @@ Features:
 	rootCmd.AddCommand(commands.NewDevCommand())
 	rootCmd.AddCommand(commands.NewDeployCommand())
 	rootCmd.AddCommand(commands.NewLoginCommand())
+	rootCmd.AddCommand(commands.NewLinkCommand())
+	rootCmd.AddCommand(commands.NewWhoamiCommand())
 	rootCmd.AddCommand(commands.NewDBCommand())
 	rootCmd.AddCommand(commands.NewGenerateCommand())
 	rootCmd.AddCommand(commands.NewAddCommand())

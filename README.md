@@ -21,15 +21,15 @@ curl -fsSL https://get.aerostack.dev | sh
 
 **npm / pnpm / yarn / bun**
 ```bash
-npm install -g @aerostack/cli
-# or: pnpm add -g @aerostack/cli
-# or: yarn global add @aerostack/cli
-# or: bun install -g @aerostack/cli
+npm install -g aerostack
+# or: pnpm add -g aerostack
+# or: yarn global add aerostack
+# or: bun install -g aerostack
 ```
 
 **npx (no install)**
 ```bash
-npx @aerostack/cli init my-app
+npx aerostack init my-app
 ```
 
 ## Quick Start
