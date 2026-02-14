@@ -12,6 +12,26 @@ The official CLI for building, testing, and deploying Aerostack applications.
 - 🤖 **AI-Powered Fixes** - Automatic error detection and fix suggestions
 - 🎨 **20+ Starter Templates** - Production-ready templates for common use cases
 
+## Installation
+
+**curl (recommended)**
+```bash
+curl -fsSL https://get.aerostack.dev | sh
+```
+
+**npm / pnpm / yarn / bun**
+```bash
+npm install -g @aerostack/cli
+# or: pnpm add -g @aerostack/cli
+# or: yarn global add @aerostack/cli
+# or: bun install -g @aerostack/cli
+```
+
+**npx (no install)**
+```bash
+npx @aerostack/cli init my-app
+```
+
 ## Quick Start
 
 ```bash

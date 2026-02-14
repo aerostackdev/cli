@@ -1,0 +1,30 @@
+{
+  "name": "@aerostack/cli",
+  "version": "1.1.0",
+  "description": "Aerostack CLI - Zero-config serverless development for Cloudflare",
+  "files": ["bin"],
+  "bin": {
+    "aerostack": "./bin/run.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "tar": "^7.0.0"
+  },
+  "keywords": [
+    "aerostack",
+    "cloudflare",
+    "workers",
+    "serverless",
+    "cli"
+  ],
+  "author": "Aerostack",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aerostackdev/cli.git"
+  },
+  "homepage": "https://aerostack.dev",
+  "engines": {
+    "node": ">=18"
+  }
+}
