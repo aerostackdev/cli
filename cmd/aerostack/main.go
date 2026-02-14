@@ -38,6 +38,7 @@ Features:
 	rootCmd.AddCommand(commands.NewLinkCommand())
 	rootCmd.AddCommand(commands.NewWhoamiCommand())
 	rootCmd.AddCommand(commands.NewDBCommand())
+	rootCmd.AddCommand(commands.NewResourcesCommand())
 	rootCmd.AddCommand(commands.NewGenerateCommand())
 	rootCmd.AddCommand(commands.NewAddCommand())
 	rootCmd.AddCommand(commands.NewTestCommand())

@@ -10,6 +10,7 @@ import (
 	"github.com/aerostackdev/cli/internal/credentials"
 	"github.com/aerostackdev/cli/internal/devserver"
 	"github.com/aerostackdev/cli/internal/link"
+	"github.com/aerostackdev/cli/internal/provision"
 	"github.com/spf13/cobra"
 )
 
@@ -17,37 +18,42 @@ import (
 func NewDeployCommand() *cobra.Command {
 	var environment string
 	var allServices bool
-	var useWrangler bool
+	var ownAccount bool
 
 	cmd := &cobra.Command{
 		Use:   "deploy [service-name]",
 		Short: "Deploy services to Aerostack cloud",
-		Long: `Deploy your services to the Aerostack cloud infrastructure.
+		Long: `Deploy your services with two clear options:
 
-When linked and logged in, deploys to Aerostack. Otherwise uses wrangler (your Cloudflare account).
-Use --wrangler to force wrangler deploy.
+  Default (Aerostack):  aerostack deploy
+    Deploys to Aerostack's infrastructure. Requires login.
+    Run 'aerostack login' first. Shows in admin Custom Logic.
 
-Example:
+  Your own account:     aerostack deploy --cloudflare
+    Deploys to your Cloudflare account via wrangler.
+    Requires: npx wrangler login (or CLOUDFLARE_API_TOKEN)
+
+Examples:
   aerostack deploy --env staging
   aerostack deploy --env production
-  aerostack deploy --wrangler  # Use your own Cloudflare account`,
+  aerostack deploy --cloudflare --env staging`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var serviceName string
 			if len(args) > 0 {
 				serviceName = args[0]
 			}
-			return deployService(serviceName, environment, allServices, useWrangler)
+			return deployService(serviceName, environment, allServices, ownAccount)
 		},
 	}
 
 	cmd.Flags().StringVarP(&environment, "env", "e", "staging", "Target environment (staging/production)")
 	cmd.Flags().BoolVar(&allServices, "all", false, "Deploy all services")
-	cmd.Flags().BoolVar(&useWrangler, "wrangler", false, "Use wrangler (your Cloudflare account) instead of Aerostack")
+	cmd.Flags().BoolVar(&ownAccount, "cloudflare", false, "Deploy to your Cloudflare account (default: Aerostack)")
 
 	return cmd
 }
 
-func deployService(service, env string, all bool, useWrangler bool) error {
+func deployService(service, env string, all bool, ownAccount bool) error {
 	// Validate env
 	if env != "staging" && env != "production" {
 		return fmt.Errorf("invalid env %q: use staging or production", env)
@@ -70,46 +76,54 @@ func deployService(service, env string, all bool, useWrangler bool) error {
 	}
 	devserver.EnsureDefaultD1(cfg)
 
-	// 4. Try Aerostack deploy if logged in (and not --wrangler)
-	// Account key: no link required. Project key: link required.
-	if !useWrangler {
-		cred, _ := credentials.Load()
-		if cred != nil && cred.APIKey != "" {
-			validateResp, err := api.Validate(cred.APIKey)
-			if err == nil {
-				if validateResp.KeyType == "account" {
-					return deployToAerostack(cfg, env, cred.APIKey, "")
-				}
-				// Project key: require link
-				projLink, _ := link.Load()
-				if projLink == nil || projLink.ProjectID == "" {
-					return fmt.Errorf("project key requires link. Run 'aerostack link %s'", validateResp.ProjectID)
-				}
-				if validateResp.ProjectID != projLink.ProjectID {
-					return fmt.Errorf("API key is for project %s but directory is linked to %s. Run 'aerostack link %s'", validateResp.ProjectID, projLink.ProjectID, validateResp.ProjectID)
-				}
-				return deployToAerostack(cfg, env, cred.APIKey, projLink.ProjectID)
-			}
+	// Path 1: Deploy to user's own Cloudflare account (--cloudflare)
+	if ownAccount {
+		projectRoot, _ := os.Getwd()
+		if projectRoot == "" {
+			projectRoot = "."
 		}
+		fmt.Println("🔍 Checking resources in aerostack.toml...")
+		if err := provision.ProvisionCloudflareResources(cfg, env, projectRoot); err != nil {
+			return fmt.Errorf("provision resources: %w", err)
+		}
+		// Re-parse config in case provision updated aerostack.toml
+		cfg, err = devserver.ParseAerostackToml("aerostack.toml")
+		if err != nil {
+			return fmt.Errorf("failed to re-parse config: %w", err)
+		}
+		wranglerPath := "wrangler.toml"
+		if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
+			return fmt.Errorf("failed to generate wrangler.toml: %w", err)
+		}
+		fmt.Printf("\n🚀 Deploying to your Cloudflare account (%s)...\n", env)
+		if err := devserver.RunWranglerDeploy(wranglerPath, env); err != nil {
+			return err
+		}
+		fmt.Println("\n✅ Deployment successful!")
+		return nil
 	}
 
-	// 5. Fall back to wrangler
-	wranglerPath := "wrangler.toml"
-	if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
-		return fmt.Errorf("failed to generate wrangler.toml: %w", err)
+	// Path 2: Deploy to Aerostack (default). Requires login.
+	cred, _ := credentials.Load()
+	if cred == nil || cred.APIKey == "" {
+		return fmt.Errorf("not logged in. Run 'aerostack login' to deploy to Aerostack.\nTo deploy to your Cloudflare account instead, use: aerostack deploy --cloudflare")
 	}
-
-	if all {
-		fmt.Printf("🚀 Deploying all services to %s (wrangler)...\n", env)
+	validateResp, err := api.Validate(cred.APIKey)
+	if err != nil {
+		return fmt.Errorf("API key invalid or unreachable: %w\nRun 'aerostack login' to fix. Or use --cloudflare to deploy to your Cloudflare account.", err)
 	}
-	fmt.Printf("🚀 Deploying to %s (wrangler)...\n", env)
-
-	if err := devserver.RunWranglerDeploy(wranglerPath, env); err != nil {
-		return err
+	if validateResp.KeyType == "account" {
+		return deployToAerostack(cfg, env, cred.APIKey, "")
 	}
-
-	fmt.Println("\n✅ Deployment successful!")
-	return nil
+	// Project key: require link
+	projLink, _ := link.Load()
+	if projLink == nil || projLink.ProjectID == "" {
+		return fmt.Errorf("project key requires link. Run 'aerostack link %s'", validateResp.ProjectID)
+	}
+	if validateResp.ProjectID != projLink.ProjectID {
+		return fmt.Errorf("API key is for project %s but directory is linked to %s. Run 'aerostack link %s'", validateResp.ProjectID, projLink.ProjectID, validateResp.ProjectID)
+	}
+	return deployToAerostack(cfg, env, cred.APIKey, projLink.ProjectID)
 }
 
 func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string, projectID string) error {
