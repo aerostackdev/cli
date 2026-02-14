@@ -1,0 +1,17 @@
+{
+  "name": "{{.ProjectName}}",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.7.0",
+    "esbuild": "^0.24.0",
+    "vitest": "~3.0.0"
+  }
+}

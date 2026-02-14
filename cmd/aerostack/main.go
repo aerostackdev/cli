@@ -36,6 +36,10 @@ Features:
 	rootCmd.AddCommand(commands.NewDeployCommand())
 	rootCmd.AddCommand(commands.NewLoginCommand())
 	rootCmd.AddCommand(commands.NewDBCommand())
+	rootCmd.AddCommand(commands.NewGenerateCommand())
+	rootCmd.AddCommand(commands.NewAddCommand())
+	rootCmd.AddCommand(commands.NewTestCommand())
+	rootCmd.AddCommand(commands.NewSecretsCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

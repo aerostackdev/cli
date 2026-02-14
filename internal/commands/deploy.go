@@ -2,7 +2,9 @@ package commands
 
 import (
 	"fmt"
+	"os"
 
+	"github.com/aerostackdev/cli/internal/devserver"
 	"github.com/spf13/cobra"
 )
 
@@ -16,10 +18,12 @@ func NewDeployCommand() *cobra.Command {
 		Short: "Deploy services to Aerostack cloud",
 		Long: `Deploy your services to the Aerostack cloud infrastructure.
 
-Supports multi-environment deployments with atomic versioning.
+Supports multi-environment deployments (staging, production).
+Uses wrangler under the hood — ensure you're logged in (wrangler login or aerostack login).
 
 Example:
-  aerostack deploy api-gateway --env production
+  aerostack deploy --env staging
+  aerostack deploy --env production
   aerostack deploy --all --env staging`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var serviceName string
@@ -37,15 +41,44 @@ Example:
 }
 
 func deployService(service, env string, all bool) error {
+	// Validate env
+	if env != "staging" && env != "production" {
+		return fmt.Errorf("invalid env %q: use staging or production", env)
+	}
+
+	// 1. Check aerostack.toml
+	if _, err := os.Stat("aerostack.toml"); os.IsNotExist(err) {
+		return fmt.Errorf("aerostack.toml not found. Run 'aerostack init' first")
+	}
+
+	// 2. Check Node.js (wrangler needs it)
+	if _, err := devserver.CheckNode(); err != nil {
+		return err
+	}
+
+	// 3. Parse config and generate wrangler.toml
+	cfg, err := devserver.ParseAerostackToml("aerostack.toml")
+	if err != nil {
+		return fmt.Errorf("failed to parse config: %w", err)
+	}
+	devserver.EnsureDefaultD1(cfg)
+
+	wranglerPath := "wrangler.toml"
+	if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
+		return fmt.Errorf("failed to generate wrangler.toml: %w", err)
+	}
+
+	// 4. Deploy (single service for now; --all not yet implemented)
 	if all {
 		fmt.Printf("🚀 Deploying all services to %s...\n", env)
-	} else {
-		fmt.Printf("🚀 Deploying %s to %s...\n", service, env)
+		// TODO: multi-service deploy
 	}
-	
-	// TODO: Implement deployment logic
+	fmt.Printf("🚀 Deploying to %s...\n", env)
+
+	if err := devserver.RunWranglerDeploy(wranglerPath, env); err != nil {
+		return err
+	}
+
 	fmt.Println("\n✅ Deployment successful!")
-	fmt.Printf("   URL: https://%s-service.aerostack.com\n", service)
-	
 	return nil
 }

@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -20,15 +19,20 @@ func NewDevCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dev",
 		Short: "Start local development server",
-		Long: `Start the Aerostack local development server with hot reload.
+		Long: `Start the Aerostack local development server with D1, KV, and full local fidelity.
 
-The dev server runs your services locally using workerd (Cloudflare's runtime),
-providing full local fidelity with production. All logs are unified and color-coded.
+What Aerostack dev gives you (vs raw npx wrangler dev):
+  • aerostack.toml as single config — no wrangler.toml to maintain
+  • Auto D1 binding — blank projects get env.DB by default
+  • --remote staging — debug with real staging data
+  • Same stack as deploy — init, dev, deploy share one config
+
+Requires Node.js 18+.
 
 Example:
   aerostack dev                    # Start local dev server
   aerostack dev --port 8787        # Use custom port
-  aerostack dev --remote staging   # Connect to staging environment`,
+  aerostack dev --remote           # Use real Cloudflare bindings`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return startDevServer(port, remote)
 		},
@@ -41,82 +45,108 @@ Example:
 }
 
 func startDevServer(port int, remote string) error {
-	fmt.Printf("🔧 Starting Aerostack dev server on http://localhost:%d\n", port)
+	fmt.Println("┌─────────────────────────────────────────────────────────┐")
+	fmt.Println("│  Aerostack dev  —  One config, D1 included, ready to go  │")
+	fmt.Println("└─────────────────────────────────────────────────────────┘")
+	fmt.Printf("\n🔧 Starting on http://localhost:%d\n", port)
 
 	// 1. Check for aerostack.toml
-	if _, err := os.Stat("aerostack.toml"); os.IsNotExist(err) {
+	aerostackToml := "aerostack.toml"
+	if _, err := os.Stat(aerostackToml); os.IsNotExist(err) {
 		return fmt.Errorf("aerostack.toml not found. Run 'aerostack init' first")
 	}
 
-	// 2. Initialize .aerostack directory for local state
+	// 2. Check Node.js (required for D1 via Wrangler/Miniflare)
+	nodeVersion, err := devserver.CheckNode()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("✓ Node.js %s\n", nodeVersion)
+
+	// 3. Parse aerostack.toml and generate wrangler.toml
+	cfg, err := devserver.ParseAerostackToml(aerostackToml)
+	if err != nil {
+		return fmt.Errorf("failed to parse aerostack.toml: %w", err)
+	}
+
+	// Ensure at least one D1 binding for local dev (blank template may not have it)
+	devserver.EnsureDefaultD1(cfg)
+
+	// Validate Postgres connection strings
+	for _, pg := range cfg.PostgresDatabases {
+		if err := devserver.ValidatePostgresConnectionString(pg.ConnectionString); err != nil {
+			return fmt.Errorf("invalid Postgres connection for binding '%s': %w", pg.Binding, err)
+		}
+	}
+
+	// 4. Initialize .aerostack directory for local state
 	dotAerostack := ".aerostack"
 	if err := os.MkdirAll(dotAerostack, 0755); err != nil {
 		return fmt.Errorf("failed to create .aerostack directory: %w", err)
 	}
 
-	// 3. Initialize D1 Sandbox (SQLite)
-	dbDir := filepath.Join(dotAerostack, "data")
-	if err := os.MkdirAll(dbDir, 0755); err != nil {
-		return fmt.Errorf("failed to create data directory: %w", err)
+	// 5. Generate wrangler.toml (and per-service configs for multi-worker)
+	wranglerPath := "wrangler.toml"
+	if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
+		return fmt.Errorf("failed to generate wrangler config: %w", err)
 	}
 
-	dbPath := filepath.Join(dbDir, "db.sqlite")
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		fmt.Println("📦 Initializing local D1 sandbox (SQLite)...")
-		file, err := os.Create(dbPath)
-		if err != nil {
-			return fmt.Errorf("failed to create local database: %w", err)
+	// Multi-worker: generate configs for each service
+	workerConfigs := []struct{ name, path string }{{name: "main", path: wranglerPath}}
+	for _, svc := range cfg.Services {
+		svcPath := filepath.Join(dotAerostack, "wrangler-"+svc.Name+".toml")
+		if err := devserver.GenerateWranglerTomlForService(cfg, svc, svcPath); err != nil {
+			return fmt.Errorf("failed to generate wrangler config for %s: %w", svc.Name, err)
 		}
-		file.Close()
+		workerConfigs = append(workerConfigs, struct{ name, path string }{svc.Name, svcPath})
 	}
 
-	// 4. Download workerd binary if needed
-	workerdPath, err := devserver.EnsureBinary(dotAerostack)
-	if err != nil {
-		return fmt.Errorf("failed to ensure workerd binary: %w", err)
+	// Show database configuration
+	dbMsg := fmt.Sprintf("D1: %d", len(cfg.D1Databases))
+	if len(cfg.PostgresDatabases) > 0 {
+		dbMsg += fmt.Sprintf(", Postgres: %d", len(cfg.PostgresDatabases))
 	}
-
-	// 5. Bundle TypeScript code
-	_, err = devserver.Bundle("src/index.ts", dotAerostack)
-	if err != nil {
-		return fmt.Errorf("failed to bundle code: %w", err)
+	if len(cfg.Services) > 0 {
+		dbMsg += fmt.Sprintf(", Services: %d", len(cfg.Services)+1)
 	}
+	fmt.Printf("📄 Generated %s (%s)\n", wranglerPath, dbMsg)
 
-	// 6. Generate workerd config (.capnp)
-	// Relative paths from the config file's directory (.aerostack/)
-	relBundlePath := "dist/index.js"
-	relDBPath := "data"
-
-	configPath, err := devserver.GenerateConfig(dotAerostack, devserver.ConfigData{
-		Port:              port,
-		BundlePath:        relBundlePath,
-		DBPath:            relDBPath,
-		CompatibilityDate: "2024-01-01",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to generate workerd config: %w", err)
+	if _, err := os.Stat(".dev.vars"); err == nil {
+		fmt.Println("🔐 Loading .dev.vars for local secrets")
 	}
 
 	if remote != "" {
 		fmt.Printf("🌐 Connected to remote environment: %s\n", remote)
 	}
 
-	// 7. Start workerd process
-	// workerd serve requires: config-file, config-constant-name (paths in embed are relative to config file)
-	absWorkerdPath, _ := filepath.Abs(workerdPath)
-	absConfigPath, _ := filepath.Abs(configPath)
+	// 6. Build Hyperdrive env vars for local Postgres
+	hyperdriveEnv := make(map[string]string)
+	if remote == "" {
+		for _, pg := range cfg.PostgresDatabases {
+			envKey := "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_" + pg.Binding
+			hyperdriveEnv[envKey] = pg.ConnectionString
+		}
+	}
 
-	cmd := exec.Command(absWorkerdPath, "serve", absConfigPath, "config")
-	cmd.Dir = filepath.Dir(absConfigPath) // Resolve embed paths relative to .aerostack/
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start workerd: %w", err)
+	// 7. Run wrangler dev (single or multi-worker)
+	var cmds []*os.Process
+	for i, wc := range workerConfigs {
+		p := port + i
+		cmd, err := devserver.RunWranglerDev(wc.path, p, remote, hyperdriveEnv)
+		if err != nil {
+			// Kill any already started
+			for _, c := range cmds {
+				if c != nil {
+					c.Kill()
+				}
+			}
+			return err
+		}
+		cmds = append(cmds, cmd.Process)
+		fmt.Printf("   [%s] http://localhost:%d\n", wc.name, p)
 	}
 
 	fmt.Println("\n✅ Dev server ready!")
-	fmt.Printf("   Listening on http://localhost:%d\n", port)
 	fmt.Println("   Press Ctrl+C to stop")
 
 	// Wait for interrupt signal to gracefully shut down
@@ -125,8 +155,10 @@ func startDevServer(port int, remote string) error {
 	<-sigChan
 
 	fmt.Println("\n👋 Shutting down dev server...")
-	if cmd.Process != nil {
-		cmd.Process.Kill()
+	for _, p := range cmds {
+		if p != nil {
+			p.Kill()
+		}
 	}
 	return nil
 }

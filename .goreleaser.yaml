@@ -45,3 +45,33 @@ release:
     name: cli
   draft: false
   prerelease: auto
+
+# Homebrew Cask - enable when aerostackdev/homebrew-tap exists
+homebrew_casks:
+  - name: aerostack
+    binaries:
+      - aerostack
+    repository:
+      owner: aerostackdev
+      name: homebrew-tap
+    homepage: "https://aerostack.dev"
+    description: "Aerostack CLI - AI-native serverless platform"
+    skip_upload: true  # Set to false after creating homebrew-tap repo
+
+# Scoop - enable when aerostackdev/scoop-aerostack bucket exists
+scoops:
+  - name: aerostack
+    repository:
+      owner: aerostackdev
+      name: scoop-aerostack
+    homepage: "https://aerostack.dev"
+    description: "Aerostack CLI - AI-native serverless platform"
+    skip_upload: true  # Set to false after creating scoop-aerostack repo
+
+# Chocolatey - generates nupkg; manual push to choco.org
+chocolateys:
+  - name: aerostack
+    project_url: "https://aerostack.dev"
+    package_source_url: "https://github.com/aerostackdev/cli"
+    summary: "Aerostack CLI - AI-native serverless platform"
+    skip_publish: true  # Manual: choco push aerostack.x.x.x.nupkg

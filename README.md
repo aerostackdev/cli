@@ -30,7 +30,7 @@ aerostack deploy --env staging
 
 ### Project Management
 - `aerostack init [name]` - Initialize a new project
-- `aerostack dev` - Start local development server
+- `aerostack dev` - Start local development server (D1, one config, see [DEV_DIFFERENTIATION.md](docs/DEV_DIFFERENTIATION.md))
 - `aerostack deploy` - Deploy to Aerostack cloud
 
 ### Database

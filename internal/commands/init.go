@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"text/template"
 
@@ -22,11 +23,9 @@ func NewInitCommand() *cobra.Command {
 		Long: `Initialize a new Aerostack project with your choice of starter template.
 
 Available templates:
-  • blog       - Simple blog with markdown support
-  • ecommerce  - E-commerce store with Stripe integration
-  • saas       - SaaS application boilerplate
-  • api        - REST API with authentication
-  • fullstack  - Full-stack app with React frontend
+  • blank      - Minimal Worker (default)
+  • api        - REST API with Hono
+  • express    - Express.js on Workers (nodejs_compat)
 
 Example:
   aerostack init my-app --template=blog`,
@@ -111,6 +110,19 @@ func initProject(name, templateName string) error {
 
 	if err != nil {
 		return fmt.Errorf("failed to scaffold project: %w", err)
+	}
+
+	// 5. Run npm install if package.json exists (e.g. api template with hono)
+	packageJSON := filepath.Join(name, "package.json")
+	if _, err := os.Stat(packageJSON); err == nil {
+		fmt.Println("📦 Installing dependencies...")
+		cmd := exec.Command("npm", "install", "--legacy-peer-deps")
+		cmd.Dir = name
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("npm install failed: %w (run 'npm install' manually)", err)
+		}
 	}
 
 	fmt.Println("\n✅ Project initialized successfully!")
