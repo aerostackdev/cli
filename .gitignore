@@ -1,0 +1,33 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test coverage
+*.out
+coverage.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies
+vendor/
+
+# Development
+.env
+.env.local
+
+# Generated / local test projects
+my-blank-app/
+my-api-app/

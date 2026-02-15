@@ -1,0 +1,21 @@
+name = "{{.ProjectName}}"
+
+[main]
+path = "api/index.ts"
+
+[[functions]]
+name = "auth-hook"
+path = "functions/auth-hook.ts"
+route = "/auth/*"
+
+{{if .IsD1}}
+[[d1_databases]]
+binding = "DB"
+database_name = "{{.ProjectName}}-db"
+{{end}}
+
+{{if .IsNeon}}
+[[postgres_databases]]
+binding = "PG"
+connection_string = "$DATABASE_URL"
+{{end}}

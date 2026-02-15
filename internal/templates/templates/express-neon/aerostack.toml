@@ -1,0 +1,10 @@
+name = "{{.ProjectName}}"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+# Support for Express (nodejs_compat)
+compatibility_flags = ["nodejs_compat"]
+
+[[postgres_databases]]
+binding = "PG"
+connection_string = "$DATABASE_URL"
+pool_size = 10

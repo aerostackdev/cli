@@ -1,0 +1,69 @@
+# Used by aerostackdev/cli repo. Tag format: v1.2.2 OR cli/v1.2.2 (both work)
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'cli/v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Set tag for GoReleaser (strip cli/ prefix if present)
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "GORELEASER_CURRENT_TAG=${TAG#cli/}" >> $GITHUB_ENV
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: v2.2.0
+          args: release --clean --skip=validate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  npm:
+    runs-on: ubuntu-latest
+    needs: goreleaser
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install npm dependencies
+        run: cd npm && npm install
+
+      - name: Set npm version from tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#cli/}"   # strip cli/ if present
+          VERSION="${VERSION#v}"  # strip v prefix
+          cd npm && npm version $VERSION --no-git-tag-version --allow-same-version
+
+      - name: Publish to npm
+        run: cd npm && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,20 @@
+name = "{{.ProjectName}}"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "api-db"
+database_id = "local-mock"
+
+# Deploy: aerostack deploy --env staging | production
+# Replace database_id with your Cloudflare D1 ID for each env
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "api-db"
+database_id = "YOUR_STAGING_D1_ID"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "api-db"
+database_id = "YOUR_PRODUCTION_D1_ID"

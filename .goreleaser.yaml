@@ -1,0 +1,50 @@
+version: 2
+
+project_name: aerostack
+
+builds:
+  - id: aerostack
+    main: ./cmd/aerostack
+    binary: aerostack
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.FullCommit}} -X main.date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      aerostack_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+release:
+  github:
+    owner: aerostackdev
+    name: cli
+  draft: false
+  prerelease: auto
+
+# Homebrew, Scoop, Chocolatey require GoReleaser v2.10+.
+# Add back when upgrading: goreleaser-action version: v2.2.0 -> v2.2.0+ in workflow

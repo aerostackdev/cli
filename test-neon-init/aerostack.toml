@@ -1,0 +1,8 @@
+name = "test-neon-init"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[[postgres_databases]]
+binding = "PG"
+connection_string = "$DATABASE_URL"
+pool_size = 10
