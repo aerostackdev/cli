@@ -19,6 +19,7 @@ type Service struct {
 // AerostackConfig represents key fields from aerostack.toml
 type AerostackConfig struct {
 	Name               string
+	ProjectSlug        string
 	Main               string
 	CompatibilityDate  string
 	CompatibilityFlags []string
@@ -66,6 +67,10 @@ func ParseAerostackToml(path string) (*AerostackConfig, error) {
 
 	// Simple key = "value" extraction
 	cfg.Name = extractTomlString(content, "name")
+	cfg.ProjectSlug = extractTomlString(content, "project_slug")
+	if cfg.ProjectSlug == "" {
+		cfg.ProjectSlug = extractTomlString(content, "slug")
+	}
 	cfg.Main = extractTomlString(content, "main")
 	if d := extractTomlString(content, "compatibility_date"); d != "" {
 		cfg.CompatibilityDate = d
