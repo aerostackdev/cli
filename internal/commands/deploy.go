@@ -112,28 +112,63 @@ func deployService(service, env string, all bool, ownAccount bool) error {
 	if err != nil {
 		return fmt.Errorf("API key invalid or unreachable: %w\nRun 'aerostack login' to fix. Or use --cloudflare to deploy to your Cloudflare account.", err)
 	}
-	if validateResp.KeyType == "account" {
-		return deployToAerostack(cfg, env, cred.APIKey, "")
+
+	// Case A: Project Key (scoped to single project)
+	if validateResp.KeyType == "project" {
+		fmt.Printf("Authenticated as project: %s\n", validateResp.ProjectName)
+		// Bypass link check, use project ID from key
+		return deployToAerostack(cfg, env, cred.APIKey, validateResp.ProjectID, service)
 	}
-	// Project key: require link
+
+	// Case B: Account Key (root access)
+	// 1. Check if linked
 	projLink, _ := link.Load()
-	if projLink == nil || projLink.ProjectID == "" {
-		return fmt.Errorf("project key requires link. Run 'aerostack link %s'", validateResp.ProjectID)
+	if projLink != nil && projLink.ProjectID != "" {
+		return deployToAerostack(cfg, env, cred.APIKey, projLink.ProjectID, service)
 	}
-	if validateResp.ProjectID != projLink.ProjectID {
-		return fmt.Errorf("API key is for project %s but directory is linked to %s. Run 'aerostack link %s'", validateResp.ProjectID, projLink.ProjectID, validateResp.ProjectID)
+
+	// 2. Not linked: Auto-create or find project by name
+	projName := cfg.Name
+	if projName == "" {
+		projName = filepath.Base(filepath.Dir(".")) // fallback to folder name? or just error?
+		if projName == "." || projName == "/" {
+			return fmt.Errorf("project name missing in aerostack.toml")
+		}
 	}
-	return deployToAerostack(cfg, env, cred.APIKey, projLink.ProjectID)
+
+	fmt.Printf("🔍 Checking project '%s'...\n", projName)
+	projectMeta, err := api.GetProjectMetadata(cred.APIKey, projName)
+	var projectID string
+
+	if err == nil && projectMeta != nil {
+		fmt.Printf("✅ Found existing project: %s (%s)\n", projectMeta.Name, projectMeta.ProjectID)
+		projectID = projectMeta.ProjectID
+	} else {
+		// Assume 404/error means not found -> Create
+		fmt.Printf("🆕 Project '%s' not found. Creating...\n", projName)
+		createResp, err := api.CreateProject(cred.APIKey, projName)
+		if err != nil {
+			return fmt.Errorf("failed to create project '%s': %w", projName, err)
+		}
+		fmt.Printf("✅ Created project: %s (%s)\n", createResp.Name, createResp.ID)
+		projectID = createResp.ID
+
+		// Auto-link for future
+		if err := link.Save(projectID); err == nil {
+			fmt.Printf("🔗 Linked local directory to project %s\n", projectID)
+		}
+	}
+
+	return deployToAerostack(cfg, env, cred.APIKey, projectID, service)
 }
 
-func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string, projectID string) error {
-	// projectID empty = account key (use name from cfg). projectID set = project key (link verified by caller).
-	projectName := ""
-	if projectID == "" {
-		projectName = cfg.Name
-		if projectName == "" {
-			projectName = "aerostack-app"
-		}
+func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string, projectID string, serviceName string) error {
+	// If serviceName is empty (no CLI arg), use name from aerostack.toml
+	if serviceName == "" {
+		serviceName = cfg.Name
+	}
+	if serviceName == "" {
+		serviceName = "default"
 	}
 
 	fmt.Printf("🚀 Deploying to Aerostack (%s)...\n", env)
@@ -158,13 +193,16 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 		return fmt.Errorf("build output not found at %s: %w", workerPath, err)
 	}
 
-	deployResp, err := api.Deploy(apiKey, workerPath, env, projectName)
+	deployResp, err := api.Deploy(apiKey, workerPath, env, serviceName)
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("\n✅ Deployed to Aerostack!\n")
-	fmt.Printf("   URL: %s\n", deployResp.URL)
-	fmt.Printf("   Project: %s (%s)\n", deployResp.Project.Name, deployResp.Project.Slug)
+	fmt.Printf("   URL: %s\n", deployResp.PublicURL)
+
+	if deployResp.Project.Slug != "" {
+		fmt.Printf("   Dashboard: https://aerocall.ai/project/%s\n", deployResp.Project.Slug)
+	}
 	return nil
 }

@@ -31,6 +31,7 @@ type ValidateResponse struct {
 
 type ProjectMetadata struct {
 	ProjectID   string `json:"projectId"`
+	Name        string `json:"name"`
 	Collections []struct {
 		ID                string  `json:"id"`
 		Name              string  `json:"name"`
@@ -127,7 +128,8 @@ type DeployResponse struct {
 		Name string `json:"name"`
 		Slug string `json:"slug"`
 	} `json:"project"`
-	Env string `json:"env"`
+	PublicURL string `json:"publicUrl"`
+	Env       string `json:"env"`
 }
 
 type DeployError struct {
@@ -188,6 +190,53 @@ func Deploy(apiKey string, workerPath string, env string, projectName string) (*
 	}
 
 	var out DeployResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+type CreateProjectResponse struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+func CreateProject(apiKey, name string) (*CreateProjectResponse, error) {
+	url := getBaseURL() + "/api/v1/cli/projects"
+
+	bodyData := map[string]string{"name": name}
+	jsonBody, _ := json.Marshal(bodyData)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		var errBody struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(body, &errBody)
+		msg := errBody.Error.Message
+		if msg == "" {
+			msg = string(body)
+		}
+		return nil, fmt.Errorf("create project failed (%d): %s", resp.StatusCode, msg)
+	}
+
+	var out CreateProjectResponse
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, err
 	}

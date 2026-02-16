@@ -9,7 +9,10 @@ import (
 	"path/filepath"
 	"text/template"
 
+	"encoding/json"
+
 	"github.com/aerostackdev/cli/internal/templates"
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -36,9 +39,67 @@ Available templates:
 
 Example:
   aerostack init my-app --template=api --db=neon`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectName := args[0]
+			var projectName string
+			if len(args) > 0 {
+				projectName = args[0]
+			}
+
+			// Only run the form for missing inputs
+			// We need to construct the form dynamically based on what's missing
+			// But huh form structure is static-ish. Let's rebuild the form based on needs.
+
+			var questions []huh.Field
+
+			if len(args) == 0 {
+				questions = append(questions, huh.NewInput().
+					Title("Project Name").
+					Description("What is the name of your new project?").
+					Value(&projectName).
+					Validate(func(str string) error {
+						if str == "" {
+							return fmt.Errorf("project name cannot be empty")
+						}
+						return nil
+					}))
+			}
+
+			if !cmd.Flags().Changed("template") {
+				questions = append(questions, huh.NewSelect[string]().
+					Title("Pick a starter template").
+					Description("Choose a template to bootstrap your project").
+					Options(
+						huh.NewOption("Blank (Minimal Worker)", "blank"),
+						huh.NewOption("API (Hono)", "api"),
+						huh.NewOption("API + Neon (Hono)", "api-neon"),
+						huh.NewOption("Express.js", "express"),
+						huh.NewOption("Express.js + Neon", "express-neon"),
+						huh.NewOption("Multi-Function", "multi-func"),
+						huh.NewOption("Cron + Neon", "cron-neon"),
+						huh.NewOption("Webhook + Neon", "webhook-neon"),
+					).
+					Value(&template).
+					WithHeight(10))
+			}
+
+			if !cmd.Flags().Changed("db") {
+				questions = append(questions, huh.NewSelect[string]().
+					Title("Select a database").
+					Description("Which database would you like to use?").
+					Options(
+						huh.NewOption("Cloudflare D1 (SQLite at Edge)", "d1"),
+						huh.NewOption("Neon (Serverless Postgres)", "neon"),
+					).
+					Value(&db))
+			}
+
+			if len(questions) > 0 {
+				if err := huh.NewForm(huh.NewGroup(questions...)).Run(); err != nil {
+					return err
+				}
+			}
+
 			return initProject(projectName, template, db)
 		},
 	}
@@ -54,21 +115,10 @@ func initProject(name, templateName, dbName string) error {
 		templateName = "blank"
 	}
 
-	// Interactive DB selection if not provided
+	// Interactive DB selection is handled in RunE now.
+	// Fallback/Default handling just in case.
 	if dbName == "" {
-		fmt.Println("Choose a database for your project:")
-		fmt.Println("  1. Cloudflare D1 (SQLite at the edge)")
-		fmt.Println("  2. Neon PostgreSQL (Managed Postgres at the edge)")
-		fmt.Print("\nSelection (1/2, default 1): ")
-
-		var input string
-		fmt.Scanln(&input)
-		switch input {
-		case "2":
-			dbName = "neon"
-		default:
-			dbName = "d1"
-		}
+		dbName = "d1"
 	}
 
 	fmt.Printf("\n🚀 Initializing Aerostack project: %s\n", name)
@@ -154,6 +204,52 @@ func initProject(name, templateName, dbName string) error {
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("npm install failed: %w (run 'npm install' manually)", err)
+		}
+
+		// 6. Update ALL dependencies to their latest versions
+		fmt.Println("🔄 Updating all dependencies to latest versions...")
+
+		// Parse package.json to get list of dependencies
+		type PackageJSON struct {
+			Dependencies    map[string]string `json:"dependencies"`
+			DevDependencies map[string]string `json:"devDependencies"`
+		}
+
+		content, err := os.ReadFile(packageJSON)
+		if err != nil {
+			fmt.Printf("⚠️  Failed to read package.json for update: %v\n", err)
+		} else {
+			var pkg PackageJSON
+			if err := json.Unmarshal(content, &pkg); err != nil {
+				fmt.Printf("⚠️  Failed to parse package.json: %v\n", err)
+			} else {
+				// Collect all packages
+				var packages []string
+				for depot := range pkg.Dependencies {
+					packages = append(packages, depot+"@latest")
+				}
+				for depot := range pkg.DevDependencies {
+					packages = append(packages, depot+"@latest")
+				}
+
+				if len(packages) > 0 {
+					// Install them all at once
+					args := append([]string{"install"}, packages...)
+					args = append(args, "--legacy-peer-deps") // Keep legacy peer deps just in case
+
+					cmdUpdate := exec.Command("npm", args...)
+					cmdUpdate.Dir = name
+					cmdUpdate.Stdout = os.Stdout
+					cmdUpdate.Stderr = os.Stderr
+					if err := cmdUpdate.Run(); err != nil {
+						fmt.Printf("⚠️  Failed to update dependencies: %v\n", err)
+						// Fallback: try updating just the SDK if the bulk update fails?
+						// For now, just warn.
+					} else {
+						fmt.Println("✨ All dependencies updated to latest!")
+					}
+				}
+			}
 		}
 	}
 

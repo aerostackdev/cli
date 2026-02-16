@@ -1,3 +1,0 @@
-# Local secrets for aerostack dev
-# Copy to .dev.vars and fill in values (never commit .dev.vars)
-# API_KEY=your-secret-key

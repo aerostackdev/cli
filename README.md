@@ -98,11 +98,11 @@ cli/
 
 ## Repository
 
-- **GitHub:** [aerostackdev/cli](https://github.com/aerostackdev/cli)
-- **Releases:** [Releases](https://github.com/aerostackdev/cli/releases)
-- **Contributing:** See [CONTRIBUTING.md](./CONTRIBUTING.md)
+- **GitHub:** [aerostackdev/sdks](https://github.com/aerostackdev/sdks)
+- **Releases:** [Releases](https://github.com/aerostackdev/sdks/releases)
+- **Contributing:** See [CONTRIBUTING.md](../../CONTRIBUTING.md)
 - **Release policy:** See [RELEASE.md](./RELEASE.md)
 
 ## License
 
-TBD
+MIT
