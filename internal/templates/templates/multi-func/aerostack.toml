@@ -14,6 +14,14 @@ binding = "DB"
 database_name = "{{.ProjectName}}-db"
 {{end}}
 
+[[kv_namespaces]]
+binding = "CACHE"
+id = "local-kv"
+
+[[queues.producers]]
+binding = "QUEUE"
+queue = "local-queue"
+
 {{if .IsNeon}}
 [[postgres_databases]]
 binding = "PG"

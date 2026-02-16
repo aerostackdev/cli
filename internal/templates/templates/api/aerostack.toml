@@ -7,6 +7,14 @@ binding = "DB"
 database_name = "api-db"
 database_id = "local-mock"
 
+[[kv_namespaces]]
+binding = "CACHE"
+id = "local-kv"
+
+[[queues.producers]]
+binding = "QUEUE"
+queue = "local-queue"
+
 # Deploy: aerostack deploy --env staging | production
 # Replace database_id with your Cloudflare D1 ID for each env
 [[env.staging.d1_databases]]

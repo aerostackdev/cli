@@ -28,7 +28,22 @@ type AerostackConfig struct {
 	// EnvOverrides: env-specific D1 database_id overrides (from [env.staging], [env.production])
 	EnvOverrides map[string][]D1Database
 	// Services: multi-worker services from [[services]]
-	Services []Service
+	Services     []Service
+	KVNamespaces []KVNamespace
+	Queues       []Queue
+}
+
+// KVNamespace represents a KV namespace binding
+type KVNamespace struct {
+	Binding   string
+	ID        string
+	PreviewID string
+}
+
+// Queue represents a Queue producer binding
+type Queue struct {
+	Binding string
+	Name    string
 }
 
 // D1Database represents a D1 database binding
@@ -85,6 +100,12 @@ func ParseAerostackToml(path string) (*AerostackConfig, error) {
 
 	// Parse [[services]] blocks (multi-worker)
 	cfg.Services = parseServices(content)
+
+	// Parse [[kv_namespaces]] blocks
+	cfg.KVNamespaces = parseKVNamespaces(content)
+
+	// Parse [[queues.producers]] blocks
+	cfg.Queues = parseQueues(content)
 
 	// Defaults
 	if cfg.Main == "" {
@@ -250,6 +271,46 @@ func parseServices(content string) []Service {
 	return svcs
 }
 
+func parseKVNamespaces(content string) []KVNamespace {
+	var nss []KVNamespace
+	blockRe := regexp.MustCompile(`\[\[kv_namespaces\]\]\s*\n([\s\S]*?)(?:\n\[\[|\n\[|\z)`)
+	blocks := blockRe.FindAllStringSubmatch(content, -1)
+	for _, block := range blocks {
+		if len(block) < 2 {
+			continue
+		}
+		inner := block[1]
+		binding := extractTomlString(inner, "binding")
+		id := extractTomlString(inner, "id")
+		previewID := extractTomlString(inner, "preview_id")
+		if binding != "" {
+			if id == "" {
+				id = "local-kv"
+			}
+			nss = append(nss, KVNamespace{Binding: binding, ID: id, PreviewID: previewID})
+		}
+	}
+	return nss
+}
+
+func parseQueues(content string) []Queue {
+	var qs []Queue
+	blockRe := regexp.MustCompile(`\[\[queues\.producers\]\]\s*\n([\s\S]*?)(?:\n\[\[|\n\[|\z)`)
+	blocks := blockRe.FindAllStringSubmatch(content, -1)
+	for _, block := range blocks {
+		if len(block) < 2 {
+			continue
+		}
+		inner := block[1]
+		binding := extractTomlString(inner, "binding")
+		name := extractTomlString(inner, "queue")
+		if binding != "" && name != "" {
+			qs = append(qs, Queue{Binding: binding, Name: name})
+		}
+	}
+	return qs
+}
+
 func extractTomlInt(content, key string) int {
 	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(key) + `\s*=\s*(\d+)`)
 	m := re.FindStringSubmatch(content)
@@ -309,6 +370,22 @@ func GenerateWranglerToml(cfg *AerostackConfig, outputPath string) error {
 		sb.WriteString(fmt.Sprintf("database_id = %q\n\n", db.DatabaseID))
 	}
 
+	for _, ns := range cfg.KVNamespaces {
+		sb.WriteString("[[kv_namespaces]]\n")
+		sb.WriteString(fmt.Sprintf("binding = %q\n", ns.Binding))
+		sb.WriteString(fmt.Sprintf("id = %q\n", ns.ID))
+		if ns.PreviewID != "" {
+			sb.WriteString(fmt.Sprintf("preview_id = %q\n", ns.PreviewID))
+		}
+		sb.WriteString("\n")
+	}
+
+	for _, q := range cfg.Queues {
+		sb.WriteString("[[queues.producers]]\n")
+		sb.WriteString(fmt.Sprintf("binding = %q\n", q.Binding))
+		sb.WriteString(fmt.Sprintf("queue = %q\n\n", q.Name))
+	}
+
 	// Hyperdrive bindings for Postgres (local: set CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<BINDING>; remote: add id from wrangler hyperdrive create)
 	for _, pg := range cfg.PostgresDatabases {
 		sb.WriteString("[[hyperdrive]]\n")
@@ -354,6 +431,20 @@ func GenerateWranglerTomlForService(cfg *AerostackConfig, svc Service, outputPat
 		sb.WriteString(fmt.Sprintf("binding = %q\n", db.Binding))
 		sb.WriteString(fmt.Sprintf("database_name = %q\n", db.DatabaseName))
 		sb.WriteString(fmt.Sprintf("database_id = %q\n\n", db.DatabaseID))
+	}
+	for _, ns := range cfg.KVNamespaces {
+		sb.WriteString("[[kv_namespaces]]\n")
+		sb.WriteString(fmt.Sprintf("binding = %q\n", ns.Binding))
+		sb.WriteString(fmt.Sprintf("id = %q\n", ns.ID))
+		if ns.PreviewID != "" {
+			sb.WriteString(fmt.Sprintf("preview_id = %q\n", ns.PreviewID))
+		}
+		sb.WriteString("\n")
+	}
+	for _, q := range cfg.Queues {
+		sb.WriteString("[[queues.producers]]\n")
+		sb.WriteString(fmt.Sprintf("binding = %q\n", q.Binding))
+		sb.WriteString(fmt.Sprintf("queue = %q\n\n", q.Name))
 	}
 	for _, pg := range cfg.PostgresDatabases {
 		sb.WriteString("[[hyperdrive]]\n")
@@ -432,5 +523,39 @@ func EnsureDefaultD1(cfg *AerostackConfig) {
 		cfg.D1Databases = []D1Database{
 			{Binding: "DB", DatabaseName: "local-db", DatabaseID: "aerostack-local"},
 		}
+	}
+}
+
+// EnsureDefaultKV adds a CACHE KV binding if missing (required by SDK for session/cache)
+func EnsureDefaultKV(cfg *AerostackConfig) {
+	hasCache := false
+	for _, ns := range cfg.KVNamespaces {
+		if ns.Binding == "CACHE" {
+			hasCache = true
+			break
+		}
+	}
+	if !hasCache {
+		cfg.KVNamespaces = append(cfg.KVNamespaces, KVNamespace{
+			Binding: "CACHE",
+			ID:      "local-kv",
+		})
+	}
+}
+
+// EnsureDefaultQueues adds a QUEUE binding if missing (required by SDK for background jobs)
+func EnsureDefaultQueues(cfg *AerostackConfig) {
+	hasQueue := false
+	for _, q := range cfg.Queues {
+		if q.Binding == "QUEUE" {
+			hasQueue = true
+			break
+		}
+	}
+	if !hasQueue {
+		cfg.Queues = append(cfg.Queues, Queue{
+			Binding: "QUEUE",
+			Name:    "local-queue",
+		})
 	}
 }

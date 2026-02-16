@@ -8,3 +8,11 @@ compatibility_flags = ["nodejs_compat"]
 binding = "PG"
 connection_string = "$DATABASE_URL"
 pool_size = 10
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "local-kv"
+
+[[queues.producers]]
+binding = "QUEUE"
+queue = "local-queue"

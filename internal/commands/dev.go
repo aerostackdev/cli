@@ -71,6 +71,10 @@ func startDevServer(port int, remote string) error {
 
 	// Ensure at least one D1 binding for local dev (blank template may not have it)
 	devserver.EnsureDefaultD1(cfg)
+	// Ensure CACHE KV binding (required by SDK)
+	devserver.EnsureDefaultKV(cfg)
+	// Ensure QUEUE binding (required by SDK)
+	devserver.EnsureDefaultQueues(cfg)
 
 	// Validate Postgres connection strings
 	for _, pg := range cfg.PostgresDatabases {

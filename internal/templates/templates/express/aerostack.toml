@@ -8,6 +8,14 @@ binding = "DB"
 database_name = "api-db"
 database_id = "local-mock"
 
+[[kv_namespaces]]
+binding = "CACHE"
+id = "local-kv"
+
+[[queues.producers]]
+binding = "QUEUE"
+queue = "local-queue"
+
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "api-db"
