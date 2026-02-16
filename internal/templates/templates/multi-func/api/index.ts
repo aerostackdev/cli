@@ -1,7 +1,13 @@
 import { Hono } from 'hono';
+import { sdk } from '@aerostack/sdk';
 import { getGreeting } from '../shared/utils';
 
-const app = new Hono();
+const app = new Hono<{ Bindings: any }>();
+
+app.use('*', async (c, next) => {
+    sdk.init(c.env);
+    await next();
+});
 
 app.get('/', (c) => {
     return c.text(getGreeting('Aerostack Multi-Function User'));

@@ -25,8 +25,28 @@ type ValidateResponse struct {
 	URL         string `json:"url"`         // project key only
 	UserID      string `json:"userId"`      // account key only
 	Email       string `json:"email"`       // account key only
-	Name        string `json:"name"`       // account key only
+	Name        string `json:"name"`        // account key only
 	Message     string `json:"message"`     // account key hint
+}
+
+type ProjectMetadata struct {
+	ProjectID   string `json:"projectId"`
+	Collections []struct {
+		ID                string  `json:"id"`
+		Name              string  `json:"name"`
+		Slug              string  `json:"slug"`
+		SchemaComponentID string  `json:"schema_component_id"`
+		Schema            *string `json:"schema"` // JSON string
+	} `json:"collections"`
+	Hooks []struct {
+		ID             string   `json:"id"`
+		Name           string   `json:"name"`
+		Slug           string   `json:"slug"`
+		EventType      string   `json:"event_type"`
+		Type           string   `json:"type"`
+		IsPublic       int      `json:"is_public"`
+		AllowedMethods []string `json:"allowed_methods"`
+	} `json:"hooks"`
 }
 
 type ValidateError struct {
@@ -69,11 +89,40 @@ func Validate(apiKey string) (*ValidateResponse, error) {
 	return &out, nil
 }
 
+func GetProjectMetadata(apiKey string, projectSlug string) (*ProjectMetadata, error) {
+	url := getBaseURL() + "/api/v1/cli/project-metadata"
+	if projectSlug != "" {
+		url += "?project=" + projectSlug
+	}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("metadata fetch failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var out ProjectMetadata
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 type DeployResponse struct {
-	Success   bool   `json:"success"`
+	Success    bool   `json:"success"`
 	ScriptName string `json:"scriptName"`
-	URL       string `json:"url"`
-	Project   struct {
+	URL        string `json:"url"`
+	Project    struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 		Slug string `json:"slug"`

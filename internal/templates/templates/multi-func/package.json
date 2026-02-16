@@ -8,6 +8,7 @@
         "test": "vitest run"
     },
     "dependencies": {
+        "@aerostack/sdk": "^0.2.0",
         "hono": "^4.0.0"
     },
     "devDependencies": {

@@ -1,7 +1,9 @@
+import { sdk } from '@aerostack/sdk';
+
 export default {
     async scheduled(event: any, env: any, ctx: any) {
-        const pg = env.PG;
+        sdk.init(env);
         console.log('Running cron task...');
-        await pg.query("INSERT INTO logs (message) VALUES ('Cron job ran at ' || NOW())");
+        await sdk.db.query("INSERT INTO logs (message) VALUES ('Cron job ran at ' || NOW())");
     },
 };

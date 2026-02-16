@@ -1,9 +1,17 @@
-// Express on Cloudflare Workers (nodejs_compat + httpServerHandler)
 import express from "express";
 import { httpServerHandler } from "cloudflare:node";
+import { sdk } from "@aerostack/sdk";
 
 const app = express();
 app.use(express.json());
+
+// Workers environment middleware
+app.use((req, res, next) => {
+  // @ts-ignore - Workers environment is attached to req in cloudflare:node
+  const env = req.env || (req as any).env;
+  if (env) sdk.init(env);
+  next();
+});
 
 app.get("/", (req, res) => {
   res.send("Hello from Express on Aerostack!");

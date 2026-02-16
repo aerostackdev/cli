@@ -2,9 +2,12 @@
     "name": "{{.ProjectName}}",
     "private": true,
     "type": "module",
+    "scripts": {
+        "test": "vitest run",
+        "test:watch": "vitest"
+    },
     "dependencies": {
-        "@aerostack/sdk": "^0.2.0",
-        "hono": "^4.0.0"
+        "@aerostack/sdk": "^0.2.0"
     },
     "devDependencies": {
         "@cloudflare/vitest-pool-workers": "^0.7.0",
