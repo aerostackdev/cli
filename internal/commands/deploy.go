@@ -19,6 +19,8 @@ func NewDeployCommand() *cobra.Command {
 	var environment string
 	var allServices bool
 	var ownAccount bool
+	var isPublic bool
+	var isPrivate bool
 
 	cmd := &cobra.Command{
 		Use:   "deploy [service-name]",
@@ -42,18 +44,20 @@ Examples:
 			if len(args) > 0 {
 				serviceName = args[0]
 			}
-			return deployService(serviceName, environment, allServices, ownAccount)
+			return deployService(serviceName, environment, allServices, ownAccount, isPublic, isPrivate)
 		},
 	}
 
 	cmd.Flags().StringVarP(&environment, "env", "e", "staging", "Target environment (staging/production)")
 	cmd.Flags().BoolVar(&allServices, "all", false, "Deploy all services")
 	cmd.Flags().BoolVar(&ownAccount, "cloudflare", false, "Deploy to your Cloudflare account (default: Aerostack)")
+	cmd.Flags().BoolVar(&isPublic, "public", false, "Make the deployed service publicly accessible")
+	cmd.Flags().BoolVar(&isPrivate, "private", false, "Make the deployed service private (requires authentication)")
 
 	return cmd
 }
 
-func deployService(service, env string, all bool, ownAccount bool) error {
+func deployService(service, env string, all bool, ownAccount bool, isPublic bool, isPrivate bool) error {
 	// Validate env
 	if env != "staging" && env != "production" {
 		return fmt.Errorf("invalid env %q: use staging or production", env)
@@ -61,7 +65,12 @@ func deployService(service, env string, all bool, ownAccount bool) error {
 
 	// 1. Check aerostack.toml
 	if _, err := os.Stat("aerostack.toml"); os.IsNotExist(err) {
-		return fmt.Errorf("aerostack.toml not found. Run 'aerostack init' first")
+		return fmt.Errorf("aerostack deploy requires you to have an aerostack.toml file in your project")
+	}
+
+	// Validate flags
+	if isPublic && isPrivate {
+		return fmt.Errorf("cannot specify both --public and --private flags")
 	}
 
 	// 2. Check Node.js
@@ -117,14 +126,14 @@ func deployService(service, env string, all bool, ownAccount bool) error {
 	if validateResp.KeyType == "project" {
 		fmt.Printf("Authenticated as project: %s\n", validateResp.ProjectName)
 		// Bypass link check, use project ID from key
-		return deployToAerostack(cfg, env, cred.APIKey, validateResp.ProjectID, service)
+		return deployToAerostack(cfg, env, cred.APIKey, validateResp.ProjectID, service, isPublic, isPrivate)
 	}
 
 	// Case B: Account Key (root access)
 	// 1. Check if linked
 	projLink, _ := link.Load()
 	if projLink != nil && projLink.ProjectID != "" {
-		return deployToAerostack(cfg, env, cred.APIKey, projLink.ProjectID, service)
+		return deployToAerostack(cfg, env, cred.APIKey, projLink.ProjectID, service, isPublic, isPrivate)
 	}
 
 	// 2. Not linked: Auto-create or find project by name
@@ -159,10 +168,10 @@ func deployService(service, env string, all bool, ownAccount bool) error {
 		}
 	}
 
-	return deployToAerostack(cfg, env, cred.APIKey, projectID, service)
+	return deployToAerostack(cfg, env, cred.APIKey, projectID, service, isPublic, isPrivate)
 }
 
-func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string, projectID string, serviceName string) error {
+func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string, projectID string, serviceName string, isPublic bool, isPrivate bool) error {
 	// If serviceName is empty (no CLI arg), use name from aerostack.toml
 	if serviceName == "" {
 		serviceName = cfg.Name
@@ -193,7 +202,7 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 		return fmt.Errorf("build output not found at %s: %w", workerPath, err)
 	}
 
-	deployResp, err := api.Deploy(apiKey, workerPath, env, serviceName)
+	deployResp, err := api.Deploy(apiKey, workerPath, env, serviceName, isPublic, isPrivate)
 	if err != nil {
 		return err
 	}

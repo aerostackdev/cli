@@ -140,7 +140,7 @@ type DeployError struct {
 	} `json:"error"`
 }
 
-func Deploy(apiKey string, workerPath string, env string, projectName string) (*DeployResponse, error) {
+func Deploy(apiKey string, workerPath string, env string, projectName string, isPublic bool, isPrivate bool) (*DeployResponse, error) {
 	workerData, err := os.ReadFile(workerPath)
 	if err != nil {
 		return nil, fmt.Errorf("read worker file: %w", err)
@@ -152,6 +152,12 @@ func Deploy(apiKey string, workerPath string, env string, projectName string) (*
 	_ = w.WriteField("env", env)
 	if projectName != "" {
 		_ = w.WriteField("name", projectName)
+	}
+	// Add is_public field if explicitly set
+	if isPublic {
+		_ = w.WriteField("isPublic", "true")
+	} else if isPrivate {
+		_ = w.WriteField("isPublic", "false")
 	}
 	part, err := w.CreateFormFile("worker", "worker.js")
 	if err != nil {
