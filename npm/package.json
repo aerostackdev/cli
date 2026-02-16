@@ -27,9 +27,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aerostackdev/cli.git"
+    "url": "git+https://github.com/aerostackdev/sdks.git",
+    "directory": "packages/cli/npm"
   },
-  "homepage": "https://aerostack.dev",
+  "bugs": {
+    "url": "https://github.com/aerostackdev/sdks/issues"
+  },
+  "homepage": "https://docs.aerostack.ai",
   "engines": {
     "node": ">=18"
   }
