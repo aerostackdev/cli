@@ -48,12 +48,8 @@ jobs:
     needs: goreleaser
     strategy:
       matrix:
-        include:
-          - runner: macos-13
-            arch: amd64
-          - runner: macos-14
-            arch: arm64
-    runs-on: ${{ matrix.runner }}
+        arch: [amd64, arm64]
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,11 +84,60 @@ jobs:
           tar -C "$PKG_DIR" -czf "$ARCHIVE" aerostack
           gh release upload "$RELEASE_TAG" "$ARCHIVE" --clobber
 
+  windows-assets:
+    needs: goreleaser
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build and upload Windows archive
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${env:GITHUB_REF}" -replace '^refs/tags/', ''
+          $releaseTag = $tag -replace '^cli/', ''
+          $version = $releaseTag -replace '^v', ''
+          $buildDate = (Get-Date -AsUTC).ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+          $outDir = "dist/windows"
+          $binPath = "${outDir}/aerostack_${version}_windows_${{ matrix.arch }}.exe"
+          $pkgDir = "${outDir}/pkg_${{ matrix.arch }}"
+          $archive = "aerostack_${version}_windows_${{ matrix.arch }}.zip"
+
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+          New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+
+          $env:CGO_ENABLED = "1"
+          $env:GOOS = "windows"
+          $env:GOARCH = "${{ matrix.arch }}"
+
+          go build -trimpath `
+            -ldflags "-s -w -X main.version=$version -X main.commit=${env:GITHUB_SHA} -X main.date=$buildDate" `
+            -o $binPath ./cmd/aerostack
+
+          Copy-Item $binPath "${pkgDir}/aerostack.exe" -Force
+          if (Test-Path $archive) { Remove-Item $archive -Force }
+          Compress-Archive -Path "${pkgDir}/aerostack.exe" -DestinationPath $archive
+          gh release upload $releaseTag $archive --clobber
+
   npm:
     runs-on: ubuntu-latest
     needs:
       - goreleaser
       - macos-assets
+      - windows-assets
     steps:
       - uses: actions/checkout@v4
         with:
