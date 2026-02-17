@@ -44,9 +44,55 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  macos-assets:
+    needs: goreleaser
+    strategy:
+      matrix:
+        include:
+          - runner: macos-13
+            arch: amd64
+          - runner: macos-14
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build and upload macOS archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          RELEASE_TAG="${TAG#cli/}"   # keep v-prefix for release tag
+          VERSION="${RELEASE_TAG#v}"  # strip v-prefix for filename
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          OUT_DIR="dist/macos"
+          BIN_PATH="${OUT_DIR}/aerostack_${VERSION}_darwin_${{ matrix.arch }}"
+          PKG_DIR="${OUT_DIR}/pkg_${{ matrix.arch }}"
+          ARCHIVE="aerostack_${VERSION}_darwin_${{ matrix.arch }}.tar.gz"
+
+          mkdir -p "$OUT_DIR" "$PKG_DIR"
+          CGO_ENABLED=1 GOOS=darwin GOARCH=${{ matrix.arch }} go build \
+            -trimpath \
+            -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${GITHUB_SHA} -X main.date=${BUILD_DATE}" \
+            -o "$BIN_PATH" ./cmd/aerostack
+
+          cp "$BIN_PATH" "${PKG_DIR}/aerostack"
+          tar -C "$PKG_DIR" -czf "$ARCHIVE" aerostack
+          gh release upload "$RELEASE_TAG" "$ARCHIVE" --clobber
+
   npm:
     runs-on: ubuntu-latest
-    needs: goreleaser
+    needs:
+      - goreleaser
+      - macos-assets
     steps:
       - uses: actions/checkout@v4
         with:
