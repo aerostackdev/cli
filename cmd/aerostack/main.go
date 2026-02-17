@@ -1,15 +1,21 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/aerostackdev/cli/internal/agent"
 	"github.com/aerostackdev/cli/internal/commands"
+	"github.com/aerostackdev/cli/internal/credentials"
+	"github.com/aerostackdev/cli/internal/pkg"
+	"github.com/aerostackdev/cli/internal/selfheal"
 	"github.com/spf13/cobra"
 )
 
 var (
-	version = "dev"
+	version = "v1.3.0"
 	commit  = "none"
 	date    = "unknown"
 )
@@ -27,7 +33,9 @@ Features:
   • Built-in testing and deployment workflows
   • AI-powered error fixing and code generation
   • Production-ready starter templates`,
-		Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date),
+		Version:       fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date),
+		SilenceErrors: true, // We handle errors manually
+		SilenceUsage:  true,
 	}
 
 	// Add subcommands
@@ -43,9 +51,58 @@ Features:
 	rootCmd.AddCommand(commands.NewAddCommand())
 	rootCmd.AddCommand(commands.NewTestCommand())
 	rootCmd.AddCommand(commands.NewSecretsCommand())
+	rootCmd.AddCommand(commands.NewIndexCommand())
+	rootCmd.AddCommand(commands.NewAICommand())
+	rootCmd.AddCommand(commands.NewAuthCommand())
+	rootCmd.AddCommand(commands.NewStoreCommand())
+	rootCmd.AddCommand(commands.NewUICommand())
+	rootCmd.AddCommand(commands.NewMigrateCommand())
 
 	if err := rootCmd.Execute(); err != nil {
+		// 1. Basic error print
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+
+		// 2. Check if we should trigger Self-Healing
+		// For MVP, trigger on ANY error if OPENAI_API_KEY is present
+		if shouldHeal(err) {
+			ctx := context.Background()
+			cwd, _ := os.Getwd()
+
+			// Init PKG & Agent (lite version, no error if missing)
+			store, _ := pkg.NewStore(cwd)
+			// Defer close? tricky with os.Exit
+
+			if store != nil {
+				ag, err := agent.NewAgent(store, false)
+				if err == nil {
+					healer := selfheal.NewHealer(ag)
+					if healErr := healer.Start(ctx, os.Args, err); healErr != nil {
+						fmt.Fprintf(os.Stderr, "Self-healing failed: %v\n", healErr)
+					}
+				}
+			}
+		}
+
 		os.Exit(1)
 	}
+}
+
+func shouldHeal(err error) bool {
+	// Don't heal on simple usage errors or interruptions
+	msg := err.Error()
+	if strings.Contains(msg, "interrupt") || strings.Contains(msg, "canceled") {
+		return false
+	}
+	// Check for API key: Azure, OpenAI, Anthropic, or Aerostack backend (aerostack login)
+	if os.Getenv("AZURE_OPENAI_API_KEY") != "" || os.Getenv("OPENAI_API_KEY") != "" || os.Getenv("ANTHROPIC_API_KEY") != "" {
+		return true
+	}
+	if os.Getenv("AEROSTACK_API_KEY") != "" {
+		return true
+	}
+	cred, _ := credentials.Load()
+	if cred != nil && cred.APIKey != "" {
+		return true
+	}
+	return false
 }

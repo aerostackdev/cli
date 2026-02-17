@@ -11,6 +11,11 @@ import (
 )
 
 func getBaseURL() string {
+	return BaseURL()
+}
+
+// BaseURL returns the Aerostack API base URL (env AEROSTACK_API_URL or default).
+func BaseURL() string {
 	if u := os.Getenv("AEROSTACK_API_URL"); u != "" {
 		return u
 	}

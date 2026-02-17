@@ -6,10 +6,13 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/aerostackdev/cli/internal/agent"
 	"github.com/aerostackdev/cli/internal/api"
 	"github.com/aerostackdev/cli/internal/credentials"
 	"github.com/aerostackdev/cli/internal/devserver"
 	"github.com/aerostackdev/cli/internal/link"
+	"github.com/aerostackdev/cli/internal/modules/deploy"
+	"github.com/aerostackdev/cli/internal/pkg"
 	"github.com/aerostackdev/cli/internal/provision"
 	"github.com/spf13/cobra"
 )
@@ -40,11 +43,39 @@ Examples:
   aerostack deploy --env production
   aerostack deploy --cloudflare --env staging`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Initialize Agent for Deploy logic
+			cwd, _ := os.Getwd()
+			store, err := pkg.NewStore(cwd)
+			if err != nil {
+				return fmt.Errorf("failed to open PKG: %w", err)
+			}
+			ag, err := agent.NewAgent(store, false)
+			if err != nil {
+				return fmt.Errorf("failed to init AI: %w", err)
+			}
+
+			deployer := deploy.NewDeployAgent(ag)
+
+			// 1. Pre-flight
+			if err := deployer.PreCheck(cmd.Context()); err != nil {
+				return err
+			}
+
+			fmt.Println("🚀 Deploying project...")
+
 			var serviceName string
 			if len(args) > 0 {
 				serviceName = args[0]
 			}
-			return deployService(serviceName, environment, allServices, ownAccount, isPublic, isPrivate)
+
+			// 2. Actual Deploy Logic
+			if err := deployService(serviceName, environment, allServices, ownAccount, isPublic, isPrivate); err != nil {
+				// 3. Failure Analysis
+				_ = deployer.AnalyzeFailure(cmd.Context(), err)
+				return err
+			}
+
+			return nil
 		},
 	}
 

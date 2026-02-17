@@ -23,6 +23,9 @@ type AerostackConfig struct {
 	Main               string
 	CompatibilityDate  string
 	CompatibilityFlags []string
+	BuildCommand       string
+	DevCommand         string
+	DeployCommand      string
 	D1Databases        []D1Database
 	PostgresDatabases  []PostgresDatabase
 	// EnvOverrides: env-specific D1 database_id overrides (from [env.staging], [env.production])

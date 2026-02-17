@@ -32,7 +32,7 @@ TEST_DIR=$(mktemp -d)
 echo ""
 echo "[3/8] Testing init (in $TEST_DIR)..."
 cd "$TEST_DIR"
-$CLI init phase2-test 2>/dev/null || true
+$CLI init phase2-test --template=blank --db=d1 2>/dev/null || true
 cd phase2-test 2>/dev/null || true
 test -f aerostack.toml && echo "✓ Init OK" || { echo "✗ Init failed (no aerostack.toml)"; exit 1; }
 

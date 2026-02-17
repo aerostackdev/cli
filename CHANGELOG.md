@@ -5,6 +5,19 @@ All notable changes to the Aerostack CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-02-17
+
+### Added
+- **AI-First Foundation**: Introduced Project-Aware Knowledge Graph (PKG) for deep code understanding.
+- **Agentic Core**: Native AI Agent with multi-turn tool use (read/write files, search symbols).
+- **Recursive Self-Healing**: Automated error interception and TUI fix proposals for command failures.
+- **Domain Modules**:
+    - `aerostack auth doctor`: AI-powered authentication diagnostics.
+    - `aerostack store schema`: Natural language SQL migration generation.
+    - `aerostack ui sync`: Theme-aware context syncing for UI development.
+- **Intelligent Deployment**: Added pre-flight checks and automated AI failure analysis for `aerostack deploy`.
+- **Legacy Migration**: `aerostack migrate` command for seamless transition from `wrangler.toml` to `aerostack.toml`.
+
 ## [1.2.9] - 2026-02-16
 
 ### Added

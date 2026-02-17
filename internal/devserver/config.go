@@ -37,6 +37,9 @@ type ConfigData struct {
 	BundlePath        string
 	DBPath            string
 	CompatibilityDate string
+	BuildCommand      string
+	DevCommand        string
+	DeployCommand     string
 }
 
 // GenerateConfig creates a .capnp configuration file for workerd
