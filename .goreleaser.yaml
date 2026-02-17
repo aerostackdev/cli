@@ -8,8 +8,8 @@ builds:
     binary: aerostack
     goos:
       - linux
-      - windows
       - darwin
+      # Windows excluded: Zig + CGO + Windows has -mthreads/pthread issues
     goarch:
       - amd64
       - arm64
@@ -32,18 +32,6 @@ builds:
           - CGO_ENABLED=1
           - CC=zig cc -target aarch64-linux-gnu
           - CXX=zig c++ -target aarch64-linux-gnu
-      - goos: windows
-        goarch: amd64
-        env:
-          - CGO_ENABLED=1
-          - CC=zig cc -target x86_64-windows-gnu
-          - CXX=zig c++ -target x86_64-windows-gnu
-      - goos: windows
-        goarch: arm64
-        env:
-          - CGO_ENABLED=1
-          - CC=zig cc -target aarch64-windows-gnu
-          - CXX=zig c++ -target aarch64-windows-gnu
       - goos: darwin
         goarch: amd64
         env:
@@ -60,9 +48,6 @@ builds:
 archives:
   - id: default
     format: tar.gz
-    format_overrides:
-      - goos: windows
-        format: zip
     name_template: >-
       aerostack_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}
 
