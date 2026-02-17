@@ -87,7 +87,7 @@ async function getInstalledVersion(binPath) {
 
 async function ensureBinary() {
   const binPath = path.join(INSTALL_DIR, process.platform === "win32" ? `${BINARY}.exe` : BINARY);
-  const { asset } = getPlatform();
+  const { platform, arch, asset } = getPlatform();
   const latestVersion = await getLatestVersion();
 
   if (fs.existsSync(binPath)) {
@@ -98,7 +98,16 @@ async function ensureBinary() {
     console.error(`Downloading Aerostack CLI v${latestVersion}...`);
   }
 
-  return downloadBinary(latestVersion, asset);
+  try {
+    return await downloadBinary(latestVersion, asset);
+  } catch (err) {
+    // Windows on ARM64 can run x64 binaries via emulation.
+    // If arm64 artifact is unavailable, fall back to windows_amd64.
+    if (platform === "win32" && arch === "arm64" && asset === "windows_arm64") {
+      return downloadBinary(latestVersion, "windows_amd64");
+    }
+    throw err;
+  }
 }
 
 async function main() {
