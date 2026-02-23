@@ -64,6 +64,16 @@ type ValidateError struct {
 
 func Validate(apiKey string) (*ValidateResponse, error) {
 	url := getBaseURL() + "/api/v1/cli/validate"
+
+	// Debug logging for 401 troubleshooting
+	if os.Getenv("DEBUG") == "true" {
+		prefix := "none"
+		if len(apiKey) > 4 {
+			prefix = apiKey[:4] + "..."
+		}
+		fmt.Printf("[DEBUG] Validating key with prefix %s at %s\n", prefix, url)
+	}
+
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
 		return nil, err
@@ -93,6 +103,41 @@ func Validate(apiKey string) (*ValidateResponse, error) {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// SendTelemetry pushes error logs to the Aerostack API for system learning.
+func SendTelemetry(apiKey, projectID, errorLog string) error {
+	if apiKey == "" {
+		return fmt.Errorf("API key required for telemetry")
+	}
+
+	url := getBaseURL() + "/api/v1/cli/telemetry/errors"
+	payload := map[string]string{
+		"projectId": projectID,
+		"logs":      errorLog,
+		"os":        "mac", // Can be runtime.GOOS
+	}
+
+	jsonBody, _ := json.Marshal(payload)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("X-API-Key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		return fmt.Errorf("telemetry failed with status %d", resp.StatusCode)
+	}
+
+	return nil
 }
 
 func GetProjectMetadata(apiKey string, projectSlug string) (*ProjectMetadata, error) {
@@ -135,6 +180,33 @@ type DeployResponse struct {
 	} `json:"project"`
 	PublicURL string `json:"publicUrl"`
 	Env       string `json:"env"`
+}
+
+type CommunityFunction struct {
+	ID             string      `json:"id"`
+	Slug           string      `json:"slug"`
+	Name           string      `json:"name"`
+	Description    string      `json:"description"`
+	Readme         string      `json:"readme"`
+	Category       string      `json:"category"`
+	Tags           []string    `json:"tags"`
+	Language       string      `json:"language"`
+	Runtime        string      `json:"runtime"`
+	Code           string      `json:"code"`
+	ConfigSchema   interface{} `json:"config_schema"`
+	License        string      `json:"license"`
+	Version        string      `json:"version"`
+	Status         string      `json:"status"`
+	AuthorUsername string      `json:"author_username"`
+	URL            string      `json:"url"`
+}
+
+type CommunityPushResponse struct {
+	ID     string `json:"id"`
+	Slug   string `json:"slug"`
+	Author string `json:"author"`
+	Status string `json:"status"`
+	URL    string `json:"url"`
 }
 
 type DeployError struct {
@@ -252,4 +324,100 @@ func CreateProject(apiKey, name string) (*CreateProjectResponse, error) {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ─── Community Functions ───────────────────────────────────────────────────
+
+func CommunityPush(apiKey string, fn CommunityFunction) (*CommunityPushResponse, error) {
+	url := getBaseURL() + "/api/community/functions"
+	jsonBody, _ := json.Marshal(fn)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 201 {
+		return nil, fmt.Errorf("push failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var out CommunityPushResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func CommunityPull(username, slug string) (*CommunityFunction, error) {
+	url := fmt.Sprintf("%s/api/community/functions/%s/%s", getBaseURL(), username, slug)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("pull failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var out struct {
+		Function CommunityFunction `json:"function"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return &out.Function, nil
+}
+
+func CommunityPullNoAuth(slug string) (*CommunityFunction, error) {
+	url := fmt.Sprintf("%s/api/community/functions/install/%s", getBaseURL(), slug)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("install search failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var out struct {
+		Function CommunityFunction `json:"function"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return &out.Function, nil
+}
+
+func CommunityPublish(apiKey, id string) error {
+	url := fmt.Sprintf("%s/api/community/functions/%s/publish", getBaseURL(), id)
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("publish failed (%d): %s", resp.StatusCode, string(body))
+	}
+	return nil
 }

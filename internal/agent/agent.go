@@ -67,13 +67,5 @@ func NewAgent(store *pkg.Store, debug bool) (*Agent, error) {
 }
 
 func getAerostackAPIKey() string {
-	if k := os.Getenv("AEROSTACK_API_KEY"); k != "" {
-		return k
-	}
-	cred, _ := credentials.Load()
-	if cred != nil && cred.APIKey != "" {
-		return cred.APIKey
-	}
-	return ""
+	return credentials.GetAPIKey()
 }
-

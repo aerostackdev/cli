@@ -257,7 +257,7 @@ func initProject(name, templateName, dbName string) error {
 	if dbName == "neon" {
 		fmt.Printf("\nNext steps for Neon:\n")
 		fmt.Printf("  1. cd %s\n", name)
-		fmt.Printf("  2. aerostack db:neon create %s-db --add-to-config\n", name)
+		fmt.Printf("  2. aerostack db neon create %s-db --add-to-config\n", name)
 		fmt.Printf("  3. aerostack dev\n")
 	} else {
 		fmt.Printf("\nNext steps:\n")

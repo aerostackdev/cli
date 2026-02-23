@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/aerostackdev/cli/internal/pkg"
 	"github.com/spf13/cobra"
 )
 
@@ -91,7 +92,7 @@ export default {
 	}
 
 	// Append [[services]] to aerostack.toml if not already present
-	if err := appendServiceToAerostackToml(name, filepath.Join("services", name, "index.ts")); err != nil {
+	if err := pkg.AppendServiceToAerostackToml(name, filepath.Join("services", name, "index.ts")); err != nil {
 		return err
 	}
 
@@ -140,25 +141,4 @@ export function placeholder(): string {
 func isValidName(s string) bool {
 	matched, _ := regexp.MatchString(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`, strings.ToLower(s))
 	return matched
-}
-
-func appendServiceToAerostackToml(serviceName, mainPath string) error {
-	data, err := os.ReadFile("aerostack.toml")
-	if err != nil {
-		return err
-	}
-	content := string(data)
-
-	// Check if [[services]] block for this service already exists
-	blockPattern := regexp.MustCompile(`\[\[services\]\]\s*\n[^\[]*name\s*=\s*"` + regexp.QuoteMeta(serviceName) + `"`)
-	if blockPattern.MatchString(content) {
-		return nil // Already registered
-	}
-
-	// Append new [[services]] block
-	block := fmt.Sprintf("\n# Multi-worker: service %s\n[[services]]\nname = %q\nmain = %q\n", serviceName, serviceName, mainPath)
-	if err := os.WriteFile("aerostack.toml", append(data, []byte(block)...), 0644); err != nil {
-		return fmt.Errorf("failed to update aerostack.toml: %w", err)
-	}
-	return nil
 }

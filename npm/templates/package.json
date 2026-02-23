@@ -1,0 +1,23 @@
+{
+    "name": "{{PROJECT_NAME}}",
+    "version": "1.0.0",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "dev": "wrangler dev",
+        "deploy": "wrangler deploy",
+        "db:push": "drizzle-kit push",
+        "db:generate": "drizzle-kit generate",
+        "db:studio": "drizzle-kit studio"
+    },
+    "dependencies": {
+        "drizzle-orm": "^0.45.1",
+        "hono": "^4.0.0"
+    },
+    "devDependencies": {
+        "@cloudflare/workers-types": "^4.20250219.0",
+        "drizzle-kit": "^0.31.0",
+        "typescript": "^5.9.0",
+        "wrangler": "^4.0.0"
+    }
+}

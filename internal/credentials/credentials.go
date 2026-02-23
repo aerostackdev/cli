@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 const credentialsDir = ".aerostack"
@@ -66,4 +67,28 @@ func Clear() error {
 		return err
 	}
 	return os.Remove(path)
+}
+
+// GetAPIKey returns the API key from environment, aerostack.toml, or credentials file.
+func GetAPIKey() string {
+	if k := os.Getenv("AEROSTACK_API_KEY"); k != "" {
+		return k
+	}
+
+	// Try aerostack.toml in current directory
+	if data, err := os.ReadFile("aerostack.toml"); err == nil {
+		re := regexp.MustCompile(`(?m)^\s*api_key\s*=\s*"([^"]+)"`)
+		matches := re.FindStringSubmatch(string(data))
+		if len(matches) > 1 {
+			return matches[1]
+		}
+	}
+
+	// Fallback to home credentials
+	cred, _ := Load()
+	if cred != nil {
+		return cred.APIKey
+	}
+
+	return ""
 }

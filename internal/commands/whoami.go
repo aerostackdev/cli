@@ -24,21 +24,15 @@ func NewWhoamiCommand() *cobra.Command {
 }
 
 func whoami() error {
-	cred, err := credentials.Load()
-	if err != nil {
-		return fmt.Errorf("load credentials: %w", err)
-	}
-
-	if cred == nil || cred.APIKey == "" {
+	apiKey := credentials.GetAPIKey()
+	if apiKey == "" {
 		fmt.Println("Not logged in. Run 'aerostack login'")
 		return nil
 	}
 
-	resp, err := api.Validate(cred.APIKey)
+	resp, err := api.Validate(apiKey)
 	if err != nil {
-		fmt.Printf("Logged in but validation failed: %v\n", err)
-		fmt.Println("Run 'aerostack login' to re-authenticate.")
-		return nil
+		return fmt.Errorf("validation failed: %w", err)
 	}
 
 	fmt.Println("Aerostack")

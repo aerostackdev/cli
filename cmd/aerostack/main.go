@@ -56,6 +56,7 @@ Features:
 	rootCmd.AddCommand(commands.NewAuthCommand())
 	rootCmd.AddCommand(commands.NewStoreCommand())
 	rootCmd.AddCommand(commands.NewUICommand())
+	rootCmd.AddCommand(commands.NewFunctionsCommand())
 	rootCmd.AddCommand(commands.NewMigrateCommand())
 
 	if err := rootCmd.Execute(); err != nil {
@@ -73,8 +74,8 @@ Features:
 			// Defer close? tricky with os.Exit
 
 			if store != nil {
-				ag, err := agent.NewAgent(store, false)
-				if err == nil {
+				ag, agentErr := agent.NewAgent(store, false)
+				if agentErr == nil {
 					healer := selfheal.NewHealer(ag)
 					if healErr := healer.Start(ctx, os.Args, err); healErr != nil {
 						fmt.Fprintf(os.Stderr, "Self-healing failed: %v\n", healErr)
@@ -93,15 +94,11 @@ func shouldHeal(err error) bool {
 	if strings.Contains(msg, "interrupt") || strings.Contains(msg, "canceled") {
 		return false
 	}
-	// Check for API key: Azure, OpenAI, Anthropic, or Aerostack backend (aerostack login)
+	// Check for API key: Azure, OpenAI, Anthropic, or Aerostack backend (aerostack.toml or credentials)
 	if os.Getenv("AZURE_OPENAI_API_KEY") != "" || os.Getenv("OPENAI_API_KEY") != "" || os.Getenv("ANTHROPIC_API_KEY") != "" {
 		return true
 	}
-	if os.Getenv("AEROSTACK_API_KEY") != "" {
-		return true
-	}
-	cred, _ := credentials.Load()
-	if cred != nil && cred.APIKey != "" {
+	if credentials.GetAPIKey() != "" {
 		return true
 	}
 	return false

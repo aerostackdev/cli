@@ -21,9 +21,9 @@ func NewDBCommand() *cobra.Command {
 		Long: `Manage D1 and external Postgres databases.
 
 Commands:
-  aerostack db:neon create <name>  Create a new Neon Postgres database
-  aerostack db:migrate new <name>  Create a new migration file
-  aerostack db:migrate apply       Apply pending migrations`,
+  aerostack db neon create <name>  Create a new Neon Postgres database
+  aerostack db migrate new <name>  Create a new migration file
+  aerostack db migrate apply       Apply pending migrations`,
 	}
 
 	// Add neon subcommand
@@ -216,7 +216,7 @@ https://console.neon.tech/app/settings/api-keys
 
 Example:
   export NEON_API_KEY=your-api-key
-  aerostack db:neon create my-database --region us-west-2 --add-to-config`,
+  aerostack db neon create my-database --region us-west-2 --add-to-config`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return createNeonDatabase(args[0], region, addToConfig)

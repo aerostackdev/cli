@@ -1,0 +1,8 @@
+name = "test-healing-project"
+main = "src/index.ts"
+api_key = "ak_invalid_test_key"
+
+# Community: service test-func-healing
+[[services]]
+name = "test-func-healing"
+main = "services/test-func-healing/index.ts"

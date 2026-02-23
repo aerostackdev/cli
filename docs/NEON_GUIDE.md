@@ -24,7 +24,7 @@ Aerostack provides native support for Neon PostgreSQL, allowing you to build ser
 5. **Create the Database via CLI**:
    Inside your project directory, run:
    ```bash
-   aerostack db:neon create my-db --add-to-config
+   aerostack db neon create my-db --add-to-config
    ```
 
 ## Usage in Code

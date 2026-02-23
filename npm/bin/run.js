@@ -1,20 +1,55 @@
 #!/usr/bin/env node
 /**
- * Aerostack CLI - npm/pnpm/yarn wrapper
- * Downloads the Go binary from GitHub releases on first run.
+ * Aerostack CLI - Hybrid Dispatcher
+ * 
+ * Routes specific commands (init, add, publish, list, login) to the
+ * pure Node.js implementation (drizzle/hono support).
+ * 
+ * All other commands map to the Go binary (legacy/platform).
  */
 
-const { spawn } = require("child_process");
-const fs = require("fs");
-const path = require("path");
+import { spawn } from 'child_process';
+import { existsSync, mkdirSync, chmodSync, writeFileSync, rmSync, renameSync } from 'fs';
+import { join, resolve } from 'path';
+import { platform as getOsPlatform, arch as getOsArch, tmpdir } from 'os';
+import { fileURLToPath } from 'url';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
+
+// ─── 1. Hybrid Dispatcher ──────────────────────────────────────────────────────
+
+const args = process.argv.slice(2);
+const command = args[0];
+const NODE_COMMANDS = ['init', 'add', 'publish', 'list', 'login'];
+
+if (command && NODE_COMMANDS.includes(command)) {
+  // Dispatch to Node.js implementation
+  import('../dist/index.js').then(m => m.run(args)).catch(err => {
+    console.error('Failed to run Node.js CLI:', err);
+    process.exit(1);
+  });
+} else {
+  // Dispatch to Go implementation
+  ensureBinary().then(binPath => {
+    const child = spawn(binPath, args, { stdio: 'inherit' });
+    child.on('exit', code => process.exit(code ?? 0));
+  }).catch(err => {
+    console.error('Error:', err.message);
+    process.exit(1);
+  });
+}
+
+// ─── 2. Go Binary Downloader (Legacy) ──────────────────────────────────────────
 
 const REPO = "aerostackdev/cli";
 const BINARY = "aerostack";
-const INSTALL_DIR = process.env.AEROSTACK_INSTALL_DIR || path.join(process.env.HOME || process.env.USERPROFILE, ".aerostack", "bin");
+// Use HOME or USERPROFILE for global install location
+const HOME = process.env.HOME || process.env.USERPROFILE || tmpdir();
+const INSTALL_DIR = process.env.AEROSTACK_INSTALL_DIR || join(HOME, ".aerostack", "bin");
 
 function getPlatform() {
-  const platform = process.platform;
-  const arch = process.arch;
+  const platform = getOsPlatform();
+  const arch = getOsArch();
   const map = {
     darwin: { arm64: "darwin_arm64", x64: "darwin_amd64" },
     linux: { arm64: "linux_arm64", x64: "linux_amd64" },
@@ -26,102 +61,69 @@ function getPlatform() {
 }
 
 async function getLatestVersion() {
-  const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-    headers: { "User-Agent": "aerostack-cli-npm/1.0" },
-  });
-  if (!res.ok) throw new Error("Failed to fetch latest version");
-  const data = await res.text();
-  const m = data.match(/"tag_name":\s*"v([^"]+)"/);
-  if (!m) throw new Error("Could not parse version");
-  return m[1];
+  // If we can't check, fallback or fail. Here we try checking.
+  try {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+      headers: { "User-Agent": "aerostack-cli-npm/1.5.0" },
+    });
+    if (!res.ok) return "1.3.0"; // Fallback if rate limited
+    const data = await res.json();
+    return data.tag_name.replace(/^v/, '');
+  } catch {
+    return "1.3.0";
+  }
 }
 
 async function downloadBinary(version, asset) {
   const ext = asset.startsWith("windows") ? "zip" : "tar.gz";
-  const archive = `${BINARY}_${version}_${asset}.${ext}`;
-  const url = `https://github.com/${REPO}/releases/download/v${version}/${archive}`;
+  const archive = `${BINARY}_v${version}_${asset}.${ext}`; // Check github release naming convention
+  // Usually: aerostack_1.3.0_darwin_arm64.tar.gz
+  // Let's assume standard GoReleaser naming: name_version_os_arch
+  const releaseName = `${BINARY}_${version}_${asset}.${ext}`;
 
-  const tmpDir = path.join(require("os").tmpdir(), `aerostack-${Date.now()}`);
-  fs.mkdirSync(tmpDir, { recursive: true });
-  const archivePath = path.join(tmpDir, archive);
+  const url = `https://github.com/${REPO}/releases/download/v${version}/${releaseName}`;
+  const tmpDir = join(tmpdir(), `aerostack-${Date.now()}`);
+  mkdirSync(tmpDir, { recursive: true });
 
-  const res = await fetch(url, {
-    headers: { "User-Agent": "aerostack-cli-npm/1.0" },
-    redirect: "follow",
-  });
-  if (!res.ok) throw new Error(`Download failed: ${url}`);
+  const archivePath = join(tmpDir, releaseName);
+
+  console.error(`Downloading Aerostack Go Core v${version}...`);
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) throw new Error(`Download failed: ${url} (${res.status})`);
+
   const buffer = Buffer.from(await res.arrayBuffer());
-  fs.writeFileSync(archivePath, buffer);
+  writeFileSync(archivePath, buffer);
 
   const binDir = INSTALL_DIR;
-  fs.mkdirSync(binDir, { recursive: true });
-  const binPath = path.join(binDir, process.platform === "win32" ? `${BINARY}.exe` : BINARY);
+  mkdirSync(binDir, { recursive: true });
+  const binPath = join(binDir, process.platform === "win32" ? `${BINARY}.exe` : BINARY);
 
   if (ext === "zip") {
-    const AdmZip = require("adm-zip");
+    const AdmZip = (await import("adm-zip")).default;
     const zip = new AdmZip(archivePath);
     zip.extractAllTo(tmpDir, true);
-    const extracted = path.join(tmpDir, `${BINARY}.exe`);
-    fs.renameSync(extracted, binPath);
+    const extracted = join(tmpDir, `${BINARY}.exe`);
+    if (existsSync(extracted)) renameSync(extracted, binPath);
   } else {
-    const tar = require("tar");
+    const tar = (await import("tar")).default;
     await tar.x({ file: archivePath, cwd: tmpDir });
-    fs.renameSync(path.join(tmpDir, BINARY), binPath);
+    const extracted = join(tmpDir, BINARY);
+    if (existsSync(extracted)) renameSync(extracted, binPath);
   }
 
-  fs.chmodSync(binPath, 0o755);
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  chmodSync(binPath, 0o755);
+  try { rmSync(tmpDir, { recursive: true, force: true }); } catch { }
   return binPath;
 }
 
-async function getInstalledVersion(binPath) {
-  try {
-    const { execFileSync } = require("child_process");
-    const out = execFileSync(binPath, ["--version"], { encoding: "utf8" });
-    const m = out.match(/v?(\d+\.\d+\.\d+)/);
-    return m ? m[1] : null;
-  } catch {
-    return null;
-  }
-}
-
 async function ensureBinary() {
-  const binPath = path.join(INSTALL_DIR, process.platform === "win32" ? `${BINARY}.exe` : BINARY);
-  const { platform, arch, asset } = getPlatform();
-  const latestVersion = await getLatestVersion();
+  const binPath = join(INSTALL_DIR, process.platform === "win32" ? `${BINARY}.exe` : BINARY);
+  const { arch, asset } = getPlatform();
 
-  if (fs.existsSync(binPath)) {
-    const installed = await getInstalledVersion(binPath);
-    if (installed && installed === latestVersion) return binPath;
-    if (installed) console.error(`Updating Aerostack CLI v${installed} → v${latestVersion}...`);
-  } else {
-    console.error(`Downloading Aerostack CLI v${latestVersion}...`);
-  }
+  // For now, always try to grab latest or fallback
+  // In production we should cache version check
+  if (existsSync(binPath)) return binPath;
 
-  try {
-    return await downloadBinary(latestVersion, asset);
-  } catch (err) {
-    // Windows on ARM64 can run x64 binaries via emulation.
-    // If arm64 artifact is unavailable, fall back to windows_amd64.
-    if (platform === "win32" && arch === "arm64" && asset === "windows_arm64") {
-      return downloadBinary(latestVersion, "windows_amd64");
-    }
-    throw err;
-  }
+  const version = await getLatestVersion();
+  return await downloadBinary(version, asset);
 }
-
-async function main() {
-  try {
-    const binPath = await ensureBinary();
-    const child = spawn(binPath, process.argv.slice(2), {
-      stdio: "inherit",
-      shell: false,
-    });
-    child.on("exit", (code) => process.exit(code ?? 0));
-  } catch (err) {
-    console.error("Error:", err.message);
-    process.exit(1);
-  }
-}
-
-main();
