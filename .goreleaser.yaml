@@ -58,6 +58,7 @@ release:
     name: cli
   draft: false
   prerelease: auto
+  replace: true
 
 # Homebrew, Scoop, Chocolatey require GoReleaser v2.10+.
 # Add back when upgrading: goreleaser-action version: v2.2.0 -> v2.2.0+ in workflow
