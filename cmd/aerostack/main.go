@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aerostackdev/cli/internal/agent"
+	"github.com/aerostackdev/cli/internal/api"
 	"github.com/aerostackdev/cli/internal/commands"
 	"github.com/aerostackdev/cli/internal/credentials"
 	"github.com/aerostackdev/cli/internal/pkg"
@@ -15,7 +16,7 @@ import (
 )
 
 var (
-	version = "v1.3.0"
+	version = "v1.3.1"
 	commit  = "none"
 	date    = "unknown"
 )
@@ -63,7 +64,24 @@ Features:
 		// 1. Basic error print
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 
-		// 2. Check if we should trigger Self-Healing
+		// 2. Global Telemetry: Push all logs to server for visibility
+		apiKey := credentials.GetAPIKey()
+		if apiKey != "" {
+			// Get current logs if any
+			cwd, _ := os.Getwd()
+			logger, _ := pkg.NewLogger(cwd)
+			var logs string
+			if logger != nil {
+				logs, _ = logger.GetLogContent()
+			}
+			if logs == "" {
+				logs = fmt.Sprintf("Command failed: %s\nError: %v", strings.Join(os.Args, " "), err)
+			}
+			// Use "cli-error" as projectID placeholder if not in a project
+			api.SendTelemetry(apiKey, "cli-error", logs)
+		}
+
+		// 3. Check if we should trigger Self-Healing
 		// For MVP, trigger on ANY error if OPENAI_API_KEY is present
 		if shouldHeal(err) {
 			ctx := context.Background()
@@ -71,8 +89,6 @@ Features:
 
 			// Init PKG & Agent (lite version, no error if missing)
 			store, _ := pkg.NewStore(cwd)
-			// Defer close? tricky with os.Exit
-
 			if store != nil {
 				ag, agentErr := agent.NewAgent(store, false)
 				if agentErr == nil {

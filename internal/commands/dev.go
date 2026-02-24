@@ -50,10 +50,15 @@ func startDevServer(port int, remote string) error {
 	fmt.Println("└─────────────────────────────────────────────────────────┘")
 	fmt.Printf("\n🔧 Starting on http://localhost:%d\n", port)
 
-	// 1. Check for aerostack.toml
-	aerostackToml := "aerostack.toml"
-	if _, err := os.Stat(aerostackToml); os.IsNotExist(err) {
-		return fmt.Errorf("aerostack.toml not found. Run 'aerostack init' first")
+	// 1. Check for aerostack.toml (fallback to wrangler.toml)
+	configPath := "aerostack.toml"
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if _, err := os.Stat("wrangler.toml"); err == nil {
+			configPath = "wrangler.toml"
+			fmt.Println("⚠️  aerostack.toml not found. Falling back to wrangler.toml")
+		} else {
+			return fmt.Errorf("aerostack.toml not found. Run 'aerostack init' first")
+		}
 	}
 
 	// 2. Check Node.js (required for D1 via Wrangler/Miniflare)
@@ -63,10 +68,10 @@ func startDevServer(port int, remote string) error {
 	}
 	fmt.Printf("✓ Node.js %s\n", nodeVersion)
 
-	// 3. Parse aerostack.toml and generate wrangler.toml
-	cfg, err := devserver.ParseAerostackToml(aerostackToml)
+	// 3. Parse config and generate wrangler.toml
+	cfg, err := devserver.ParseAerostackToml(configPath)
 	if err != nil {
-		return fmt.Errorf("failed to parse aerostack.toml: %w", err)
+		return fmt.Errorf("failed to parse %s: %w", configPath, err)
 	}
 
 	// Ensure at least one D1 binding for local dev (blank template may not have it)
@@ -75,6 +80,8 @@ func startDevServer(port int, remote string) error {
 	devserver.EnsureDefaultKV(cfg)
 	// Ensure QUEUE binding (required by SDK)
 	devserver.EnsureDefaultQueues(cfg)
+	// Ensure AI binding
+	devserver.EnsureDefaultAI(cfg)
 
 	// Validate Postgres connection strings
 	for _, pg := range cfg.PostgresDatabases {
@@ -156,12 +163,13 @@ func startDevServer(port int, remote string) error {
 	// Wait for interrupt signal to gracefully shut down
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
+	s := <-sigChan
 
-	fmt.Println("\n👋 Shutting down dev server...")
+	fmt.Printf("\n👋 Received %v. Shutting down dev server...\n", s)
 	for _, p := range cmds {
 		if p != nil {
-			p.Kill()
+			// Kill the whole process group (negative PID)
+			_ = syscall.Kill(-p.Pid, syscall.SIGKILL)
 		}
 	}
 	return nil

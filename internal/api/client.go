@@ -8,7 +8,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"time"
 )
+
+var httpClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
 
 func getBaseURL() string {
 	return BaseURL()
@@ -81,7 +86,7 @@ func Validate(apiKey string) (*ValidateResponse, error) {
 	req.Header.Set("X-API-Key", apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -127,7 +132,7 @@ func SendTelemetry(apiKey, projectID, errorLog string) error {
 	req.Header.Set("X-API-Key", apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -151,7 +156,7 @@ func GetProjectMetadata(apiKey string, projectSlug string) (*ProjectMetadata, er
 	}
 	req.Header.Set("X-API-Key", apiKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -255,7 +260,7 @@ func Deploy(apiKey string, workerPath string, env string, projectName string, is
 	req.Header.Set("X-API-Key", apiKey)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -298,7 +303,7 @@ func CreateProject(apiKey, name string) (*CreateProjectResponse, error) {
 	req.Header.Set("X-API-Key", apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -339,7 +344,7 @@ func CommunityPush(apiKey string, fn CommunityFunction) (*CommunityPushResponse,
 	req.Header.Set("X-API-Key", apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -409,7 +414,7 @@ func CommunityPublish(apiKey, id string) error {
 	}
 	req.Header.Set("X-API-Key", apiKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}

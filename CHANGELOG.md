@@ -5,6 +5,15 @@ All notable changes to the Aerostack CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-02-24
+
+### Added
+- **Feature Boilerplates**: Added comprehensive DB (D1), Cache (KV), AI Proxy, and Queue examples to all project templates (`blank`, `api`, `express`, `neon`).
+
+### Fixed
+- **AI Bindings**: Fixed a bug where `aerostack dev` was missing AI bindings in the generated `wrangler.toml`.
+- **Template Reliability**: Improved SDK initialization and Queue support in starter templates.
+
 ## [1.3.0] - 2026-02-17
 
 ### Added

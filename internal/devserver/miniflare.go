@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // Service represents a multi-worker service from [[services]]
@@ -34,6 +35,7 @@ type AerostackConfig struct {
 	Services     []Service
 	KVNamespaces []KVNamespace
 	Queues       []Queue
+	AI           bool
 }
 
 // KVNamespace represents a KV namespace binding
@@ -111,8 +113,16 @@ func ParseAerostackToml(path string) (*AerostackConfig, error) {
 	cfg.Queues = parseQueues(content)
 
 	// Defaults
-	if cfg.Main == "" {
-		cfg.Main = "src/index.ts"
+	if cfg.Main == "" || cfg.Main == "dist/worker.js" {
+		// If main is empty or points to the build output (common in wrangler.toml),
+		// try to find the source entrypoint.
+		if _, err := os.Stat("src/index.ts"); err == nil {
+			cfg.Main = "src/index.ts"
+		} else if _, err := os.Stat("src/index.js"); err == nil {
+			cfg.Main = "src/index.js"
+		} else if cfg.Main == "" {
+			cfg.Main = "src/index.ts"
+		}
 	}
 	if cfg.Name == "" {
 		cfg.Name = "aerostack-app"
@@ -340,10 +350,11 @@ func GenerateWranglerToml(cfg *AerostackConfig, outputPath string) error {
 	// Use dist/worker.js when we have a build step (@shared alias)
 	esbuildFlags := "--bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared"
 	if hasNodeCompat {
-		// Express and others need --platform=node to resolve built-ins correctly for nodejs_compat
-		// We also add a require shim because express is CommonJS but we bundle as ESM
-		banner := "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);"
-		esbuildFlags += fmt.Sprintf(" --platform=node --external:node:* --external:cloudflare:* --banner:js=%[1]q", banner)
+		// nodejs_compat handles Node.js built-ins natively in Cloudflare Workers.
+		// Do NOT add a createRequire shim — import.meta.url is undefined in Workers
+		// and would cause a runtime crash. External node:* and cloudflare:* are still
+		// needed so esbuild doesn't try to bundle them.
+		esbuildFlags += " --platform=node --external:node:* --external:cloudflare:*"
 	}
 	buildCmd := fmt.Sprintf("npx esbuild %q %s", cfg.Main, esbuildFlags)
 
@@ -387,6 +398,11 @@ func GenerateWranglerToml(cfg *AerostackConfig, outputPath string) error {
 		sb.WriteString("[[queues.producers]]\n")
 		sb.WriteString(fmt.Sprintf("binding = %q\n", q.Binding))
 		sb.WriteString(fmt.Sprintf("queue = %q\n\n", q.Name))
+	}
+
+	if cfg.AI {
+		sb.WriteString("[ai]\n")
+		sb.WriteString("binding = \"AI\"\n\n")
 	}
 
 	// Hyperdrive bindings for Postgres (local: set CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<BINDING>; remote: add id from wrangler hyperdrive create)
@@ -496,11 +512,25 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 	// Always run wrangler from project root (where aerostack.toml is)
 	projectRoot, _ := os.Getwd()
 
-	args := []string{"-y", "wrangler@latest", "dev", "--config", absPath, "--port", strconv.Itoa(port)}
+	// Try local wrangler first (much faster than npx)
+	wranglerBin := "wrangler"
+	if _, err := os.Stat(filepath.Join(projectRoot, "node_modules", ".bin", "wrangler")); err == nil {
+		wranglerBin = filepath.Join(projectRoot, "node_modules", ".bin", "wrangler")
+	}
+
+	execName := "npx"
+	var args []string
+	if wranglerBin == "wrangler" {
+		args = []string{"-y", "wrangler@latest", "dev", "--config", absPath, "--port", strconv.Itoa(port)}
+	} else {
+		execName = wranglerBin
+		args = []string{"dev", "--config", absPath, "--port", strconv.Itoa(port)}
+	}
+
 	if remoteEnv != "" {
 		args = append(args, "--remote", "--env", remoteEnv)
 	}
-	cmd := exec.Command("npx", args...)
+	cmd := exec.Command(execName, args...)
 	cmd.Dir = projectRoot
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -508,6 +538,20 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 
 	// Ensure npx finds packages (use project dir)
 	cmd.Env = append(cmd.Env, "NPX_UPDATE_NOTIFIER=false")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// Helper for local testing: if AEROSTACK_API_URL is not set, default to localhost:8787
+	// (This enables the AI proxy during dev if the local API is running)
+	hasApiUrl := false
+	for _, e := range cmd.Env {
+		if strings.HasPrefix(e, "AEROSTACK_API_URL=") {
+			hasApiUrl = true
+			break
+		}
+	}
+	if !hasApiUrl {
+		cmd.Env = append(cmd.Env, "AEROSTACK_API_URL=http://localhost:8787")
+	}
 
 	// Inject Hyperdrive local connection strings (avoids writing secrets to wrangler.toml)
 	for k, v := range hyperdriveEnvVars {
@@ -561,4 +605,9 @@ func EnsureDefaultQueues(cfg *AerostackConfig) {
 			Name:    "local-queue",
 		})
 	}
+}
+
+// EnsureDefaultAI adds an AI binding if missing
+func EnsureDefaultAI(cfg *AerostackConfig) {
+	cfg.AI = true
 }
