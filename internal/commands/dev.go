@@ -148,7 +148,7 @@ func startDevServer(port int, remote string) error {
 			// Kill any already started
 			for _, c := range cmds {
 				if c != nil {
-					c.Kill()
+					devserver.KillProcessGroup(c)
 				}
 			}
 			return err
@@ -168,8 +168,7 @@ func startDevServer(port int, remote string) error {
 	fmt.Printf("\n👋 Received %v. Shutting down dev server...\n", s)
 	for _, p := range cmds {
 		if p != nil {
-			// Kill the whole process group (negative PID)
-			_ = syscall.Kill(-p.Pid, syscall.SIGKILL)
+			devserver.KillProcessGroup(p)
 		}
 	}
 	return nil
