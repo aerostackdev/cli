@@ -5,7 +5,7 @@ All notable changes to the Aerostack CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.1] - 2026-02-24
+## [1.5.2] - 2026-02-24
 
 ### Added
 - **Feature Boilerplates**: Added comprehensive DB (D1), Cache (KV), AI Proxy, and Queue examples to all project templates (`blank`, `api`, `express`, `neon`).
@@ -13,8 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **AI Bindings**: Fixed a bug where `aerostack dev` was missing AI bindings in the generated `wrangler.toml`.
 - **Template Reliability**: Improved SDK initialization and Queue support in starter templates.
+- **Version Synchronization**: Synchronized CLI version across Go source, NPM package, and VERSION tracker.
 
-## [1.3.0] - 2026-02-17
+## [1.5.1] - 2026-02-18
 
 ### Added
 - **AI-First Foundation**: Introduced Project-Aware Knowledge Graph (PKG) for deep code understanding.
