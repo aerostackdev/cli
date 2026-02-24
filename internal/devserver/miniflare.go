@@ -562,7 +562,8 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 
 	// Ensure npx finds packages (use project dir)
 	cmd.Env = append(cmd.Env, "NPX_UPDATE_NOTIFIER=false")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	setProcessGroup(cmd.SysProcAttr)
 
 	// Helper for local testing: if AEROSTACK_API_URL is not set, default to localhost:8787
 	// (This enables the AI proxy during dev if the local API is running)

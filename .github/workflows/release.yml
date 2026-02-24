@@ -132,34 +132,3 @@ jobs:
           Compress-Archive -Path "${pkgDir}/aerostack.exe" -DestinationPath $archive
           gh release upload $releaseTag $archive --clobber
 
-  npm:
-    runs-on: ubuntu-latest
-    needs:
-      - goreleaser
-      - macos-assets
-      - windows-assets
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install npm dependencies
-        run: cd npm && npm install
-
-      - name: Set npm version from tag
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG#cli/}"   # strip cli/ if present
-          VERSION="${VERSION#v}"  # strip v prefix
-          cd npm && npm version $VERSION --no-git-tag-version --allow-same-version
-
-      - name: Publish to npm
-        run: cd npm && npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
