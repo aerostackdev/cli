@@ -52,33 +52,19 @@ aerostack dev
 # GET /users/42 → {"id":"42","name":"User 42","role":"developer"}
 ```
 
-### 5. Deploy to Cloudflare
+### 5. Deploy to Aerostack
 
 **Prerequisites:**
-- Cloudflare account
-- Wrangler logged in
+- Project API key (or login)
 
 **Steps:**
 
 ```bash
-# 1. Login to Cloudflare
-npx wrangler login
-
-# 2. Create a D1 database (one-time)
-npx wrangler d1 create demo-api-db
-# Copy the database_id from output
-
-# 3. Update aerostack.toml — replace YOUR_STAGING_D1_ID with your database_id
-# [[env.staging.d1_databases]]
-# binding = "DB"
-# database_name = "api-db"
-# database_id = "<paste-your-d1-id-here>"
-
-# 4. Deploy
+# Deploy
 aerostack deploy --env staging
 ```
 
-After deploy, Wrangler will output your Worker URL (e.g. `https://demo-api.<subdomain>.workers.dev`).
+After deploy, the CLI will output your Worker URL (e.g. `https://<slug>.aerocall.ai/custom/...`).
 
 ---
 
@@ -87,15 +73,7 @@ After deploy, Wrangler will output your Worker URL (e.g. `https://demo-api.<subd
 To run the full demo including deploy attempt:
 
 ```bash
-# 1. Login first
-npx wrangler login
-
-# 2. Create D1 and get ID
-npx wrangler d1 create demo-aerostack-db
-
-# 3. Update aerostack.toml in demo project (after script runs) with the database_id
-
-# 4. Run demo with deploy
+# Run demo with deploy
 DEPLOY=1 ./cli/scripts/demo-e2e.sh
 ```
 
@@ -103,7 +81,6 @@ Or run deploy manually after the script:
 
 ```bash
 cd demo-aerostack
-# Edit aerostack.toml with your D1 database_id
 aerostack deploy --env staging
 ```
 
@@ -137,7 +114,5 @@ aerostack deploy --env staging
 | Issue | Fix |
 |-------|-----|
 | `aerostack.toml not found` | Run from project root (where aerostack.toml is) |
-| `wrangler secret list failed` | Run `npx wrangler login` |
-| Deploy fails with D1 error | Ensure `database_id` in aerostack.toml matches your D1 database |
 | Tests fail (hono not found) | Run `npm install` in project |
 | Dev fails (esbuild) | Ensure Node 18+ and `npm install` was run |

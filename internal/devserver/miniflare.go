@@ -40,22 +40,22 @@ type AerostackConfig struct {
 
 // KVNamespace represents a KV namespace binding
 type KVNamespace struct {
-	Binding   string
-	ID        string
-	PreviewID string
+	Binding   string `json:"binding"`
+	ID        string `json:"id"`
+	PreviewID string `json:"preview_id,omitempty"`
 }
 
 // Queue represents a Queue producer binding
 type Queue struct {
-	Binding string
-	Name    string
+	Binding string `json:"binding"`
+	Name    string `json:"queue"`
 }
 
 // D1Database represents a D1 database binding
 type D1Database struct {
-	Binding      string
-	DatabaseName string
-	DatabaseID   string
+	Binding      string `json:"binding"`
+	DatabaseName string `json:"database_name"`
+	DatabaseID   string `json:"database_id"`
 }
 
 // PostgresDatabase represents an external Postgres database binding
@@ -348,7 +348,7 @@ func GenerateWranglerToml(cfg *AerostackConfig, outputPath string) error {
 	}
 
 	// Use dist/worker.js when we have a build step (@shared alias)
-	esbuildFlags := "--bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared"
+	esbuildFlags := "--bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared --minify"
 	if hasNodeCompat {
 		// nodejs_compat handles Node.js built-ins natively in Cloudflare Workers.
 		// Do NOT add a createRequire shim — import.meta.url is undefined in Workers
@@ -416,13 +416,37 @@ func GenerateWranglerToml(cfg *AerostackConfig, outputPath string) error {
 	// Env blocks for deploy --env staging/production (use overrides from aerostack.toml if present)
 	sb.WriteString("# Deploy: aerostack deploy --env staging | production\n")
 	for _, envName := range []string{"staging", "production"} {
-		sb.WriteString(fmt.Sprintf("[env.%s]\n", envName))
 		dbs := cfg.EnvOverrides[envName]
-		if len(dbs) == 0 {
-			dbs = cfg.D1Databases
+		// Even if no DB overrides, we should still output the env block if we are deploying with --env
+		// and include general resources (KV, Queues, AI) because wrangler doesn't inherit them.
+		sb.WriteString(fmt.Sprintf("[env.%s]\n", envName))
+
+		// 1. D1
+		d1ToUse := dbs
+		if len(d1ToUse) == 0 {
+			d1ToUse = cfg.D1Databases
 		}
-		for _, db := range dbs {
+		for _, db := range d1ToUse {
 			sb.WriteString(fmt.Sprintf("[[env.%s.d1_databases]]\nbinding = %q\ndatabase_name = %q\ndatabase_id = %q\n\n", envName, db.Binding, db.DatabaseName, db.DatabaseID))
+		}
+
+		// 2. KV
+		for _, ns := range cfg.KVNamespaces {
+			sb.WriteString(fmt.Sprintf("[[env.%s.kv_namespaces]]\nbinding = %q\nid = %q\n", envName, ns.Binding, ns.ID))
+			if ns.PreviewID != "" {
+				sb.WriteString(fmt.Sprintf("preview_id = %q\n", ns.PreviewID))
+			}
+			sb.WriteString("\n")
+		}
+
+		// 3. Queues
+		for _, q := range cfg.Queues {
+			sb.WriteString(fmt.Sprintf("[[env.%s.queues.producers]]\nbinding = %q\nqueue = %q\n\n", envName, q.Binding, q.Name))
+		}
+
+		// 4. AI
+		if cfg.AI {
+			sb.WriteString(fmt.Sprintf("[env.%s.ai]\nbinding = \"AI\"\n\n", envName))
 		}
 	}
 
@@ -438,7 +462,7 @@ func GenerateWranglerTomlForService(cfg *AerostackConfig, svc Service, outputPat
 	// Wrangler runs the build command from its Dir (which we set to project root in RunWranglerDev),
 	// but it resolves the 'main' entry point relative to its configuration file location.
 	// Our config is in .aerostack/wrangler-*.toml, so main needs to go one level up to find the dist/ folder.
-	buildCmd := fmt.Sprintf("npx esbuild %q --bundle --outfile=%s --format=esm --alias:@shared=./shared", svc.Main, outfile)
+	buildCmd := fmt.Sprintf("npx esbuild %q --bundle --outfile=%s --format=esm --alias:@shared=./shared --minify", svc.Main, outfile)
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("name = %q\n", cfg.Name+"-"+svc.Name))
 	sb.WriteString(fmt.Sprintf("main = %q\n", "../"+outfile))

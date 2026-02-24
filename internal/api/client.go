@@ -185,6 +185,7 @@ type DeployResponse struct {
 	} `json:"project"`
 	PublicURL string `json:"publicUrl"`
 	Env       string `json:"env"`
+	IsPublic  bool   `json:"isPublic"`
 }
 
 type CommunityFunction struct {
@@ -222,12 +223,7 @@ type DeployError struct {
 	} `json:"error"`
 }
 
-func Deploy(apiKey string, workerPath string, env string, projectName string, isPublic bool, isPrivate bool) (*DeployResponse, error) {
-	workerData, err := os.ReadFile(workerPath)
-	if err != nil {
-		return nil, fmt.Errorf("read worker file: %w", err)
-	}
-
+func Deploy(apiKey string, files map[string]string, env string, projectName string, isPublic bool, isPrivate bool, bindingsJSON string) (*DeployResponse, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 
@@ -235,19 +231,30 @@ func Deploy(apiKey string, workerPath string, env string, projectName string, is
 	if projectName != "" {
 		_ = w.WriteField("name", projectName)
 	}
+	if bindingsJSON != "" {
+		_ = w.WriteField("bindings", bindingsJSON)
+	}
 	// Add is_public field if explicitly set
 	if isPublic {
 		_ = w.WriteField("isPublic", "true")
 	} else if isPrivate {
 		_ = w.WriteField("isPublic", "false")
 	}
-	part, err := w.CreateFormFile("worker", "worker.js")
-	if err != nil {
-		return nil, err
+
+	for name, path := range files {
+		workerData, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read file %s: %w", path, err)
+		}
+		part, err := w.CreateFormFile(name, name)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := part.Write(workerData); err != nil {
+			return nil, err
+		}
 	}
-	if _, err := part.Write(workerData); err != nil {
-		return nil, err
-	}
+
 	if err := w.Close(); err != nil {
 		return nil, err
 	}

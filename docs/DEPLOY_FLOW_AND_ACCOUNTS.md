@@ -2,18 +2,18 @@
 
 > **Product direction:** Aerostack-first. Users create projects on Aerostack, login/validate, and deploy to Aerostack's infrastructure. See `docs/planning/AEROSTACK_FIRST_DEPLOY_FLOW.md` for the target flow.
 
-## Current Implementation: **Your Cloudflare Account** (Temporary)
+## Current Implementation: **Aerostack Platform**
 
-`aerostack deploy` runs `wrangler deploy` under the hood. Wrangler uses **your** Cloudflare credentials:
+`aerostack deploy` now natively deploys your code directly to the **Aerostack Cloudflare infrastructure**.
 
-- From `npx wrangler login` (browser OAuth)
-- Or from `CLOUDFLARE_API_TOKEN` environment variable
-
-**Result:** Workers, D1 databases, and bindings are created in **your Cloudflare account**. You own everything. Aerostack CLI does not use a separate "Aerostack account."
+- Uses your **Aerostack Project API Key** (or browser session)
+- Automatically provisions a **D1 Database** (isolated by project ID)
+- Automatically provisions a **KV Cache** namespace
+- Does **not** require you to configure `database_id` values in your `aerostack.toml`.
 
 ---
 
-## Deploy Flow (Current)
+## Deploy Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -22,50 +22,17 @@
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  1. Parse aerostack.toml                                         │
-│  2. Generate wrangler.toml (with env.staging overrides)           │
-│  3. Run: npx wrangler deploy --config wrangler.toml --env staging │
+│  1. Build your worker code locally using esbuild                 │
+│  2. Send multipart form payload to Aerostack CLI API             │
+│  3. Aerostack API attaches native D1, KV, and AI bindings        │
+│  4. Aerostack API orchestrates Cloudflare API deployment         │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Wrangler uses YOUR credentials (from wrangler login)             │
-│  → Deploys to YOUR Cloudflare account                             │
-│  → Worker URL: https://<name>-staging.<your-subdomain>.workers.dev│
+│  Worker URL: https://<project>.<slug>.aerocall.ai/custom/...     │
 └─────────────────────────────────────────────────────────────────┘
 ```
-
----
-
-## The Error You Saw
-
-```
-binding DB of type d1 must have a valid `id` specified [code: 10021]
-```
-
-**Cause:** `database_id` in `aerostack.toml` is still the placeholder `YOUR_STAGING_D1_ID`. Cloudflare expects a real D1 database UUID (e.g. `a1b2c3d4-e5f6-7890-abcd-ef1234567890`).
-
-**Fix:**
-
-1. Create a D1 database in your Cloudflare account:
-   ```bash
-   npx wrangler d1 create demo-api-db
-   ```
-
-2. Copy the `database_id` from the output (UUID format).
-
-3. Update `aerostack.toml`:
-   ```toml
-   [[env.staging.d1_databases]]
-   binding = "DB"
-   database_name = "api-db"
-   database_id = "<paste-the-uuid-here>"
-   ```
-
-4. Run deploy again:
-   ```bash
-   aerostack deploy --env staging
-   ```
 
 ---
 
@@ -94,7 +61,6 @@ Until Aerostack backend exists, deploy uses `wrangler deploy` → **your Cloudfl
 
 | Question | Answer |
 |----------|--------|
-| Where does deploy go? | **Your Cloudflare account** (via wrangler login) |
-| Is there an Aerostack account? | No. Aerostack CLI does not deploy to a separate Aerostack account. |
-| Why the D1 error? | `database_id` must be a real D1 UUID, not a placeholder. |
-| How to fix? | Create D1 with `wrangler d1 create`, copy ID, update aerostack.toml. |
+| Where does deploy go? | **Aerostack platform infrastructure** |
+| Do I need Cloudflare? | No. Aerostack manages everything. |
+| Do I need `database_id`? | No, the CLI API auto-provisions D1 per project. |

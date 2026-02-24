@@ -16,12 +16,4 @@ id = "local-kv"
 binding = "QUEUE"
 queue = "local-queue"
 
-[[env.staging.d1_databases]]
-binding = "DB"
-database_name = "api-db"
-database_id = "YOUR_STAGING_D1_ID"
 
-[[env.production.d1_databases]]
-binding = "DB"
-database_name = "api-db"
-database_id = "YOUR_PRODUCTION_D1_ID"

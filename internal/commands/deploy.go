@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -58,7 +59,7 @@ Examples:
 
 			// 1. Pre-flight
 			if err := deployer.PreCheck(cmd.Context()); err != nil {
-				return err
+				fmt.Printf("⚠️  Pre-flight check skipped: %v\n", err)
 			}
 
 			fmt.Println("🚀 Deploying project...")
@@ -218,7 +219,7 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 	if mainEntry == "" {
 		mainEntry = "src/index.ts"
 	}
-	buildCmd := fmt.Sprintf("npx esbuild %q --bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared", mainEntry)
+	buildCmd := fmt.Sprintf("npx esbuild %q --bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared --minify", mainEntry)
 
 	cmd := exec.Command("sh", "-c", buildCmd)
 	cmd.Dir = "."
@@ -228,12 +229,57 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 		return fmt.Errorf("build failed: %w", err)
 	}
 
-	workerPath := filepath.Join("dist", "worker.js")
-	if _, err := os.Stat(workerPath); err != nil {
-		return fmt.Errorf("build output not found at %s: %w", workerPath, err)
+	distPath := "dist"
+	files := make(map[string]string)
+	entries, err := os.ReadDir(distPath)
+	if err != nil {
+		return fmt.Errorf("failed to read dist directory: %w", err)
 	}
 
-	deployResp, err := api.Deploy(apiKey, workerPath, env, serviceName, isPublic, isPrivate)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			name := entry.Name()
+			// We only upload .js, .mjs, .wasm, etc. as modules.
+			// Cloudflare Workers expect the main entry as worker.js.
+			localPath := filepath.Join(distPath, name)
+			if name == "worker.js" {
+				files["worker.js"] = localPath
+			} else {
+				// Upload other files as modules
+				files[name] = localPath
+			}
+		}
+	}
+
+	if _, ok := files["worker.js"]; !ok {
+		return fmt.Errorf("build output worker.js not found in %s", distPath)
+	}
+
+	// Prepare bindings JSON
+	// Combine default bindings with env overrides
+	d1s := cfg.D1Databases
+	if overrides, ok := cfg.EnvOverrides[env]; ok && len(overrides) > 0 {
+		d1s = overrides
+	}
+
+	type BindingPayload struct {
+		D1Databases  []devserver.D1Database  `json:"d1_databases,omitempty"`
+		KVNamespaces []devserver.KVNamespace `json:"kv_namespaces,omitempty"`
+		Queues       []devserver.Queue       `json:"queues,omitempty"`
+		AI           bool                    `json:"ai,omitempty"`
+	}
+
+	bindingsPayload := BindingPayload{
+		D1Databases:  d1s,
+		KVNamespaces: cfg.KVNamespaces,
+		Queues:       cfg.Queues,
+		AI:           cfg.AI,
+	}
+
+	bData, _ := json.Marshal(bindingsPayload)
+	bindingsJSON := string(bData)
+
+	deployResp, err := api.Deploy(apiKey, files, env, serviceName, isPublic, isPrivate, bindingsJSON)
 	if err != nil {
 		return err
 	}
@@ -244,5 +290,21 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 	if deployResp.Project.Slug != "" {
 		fmt.Printf("   Dashboard: https://aerocall.ai/project/%s\n", deployResp.Project.Slug)
 	}
+
+	fmt.Printf("\n🔒 Authentication Status:\n")
+	if deployResp.IsPublic {
+		fmt.Printf("   Your API is PUBLIC. Anyone can access it without an API key.\n")
+		fmt.Printf("   To make it private, deploy with: aerostack deploy --private\n")
+		fmt.Printf("\n   Test it now:\n")
+		fmt.Printf("   curl %s\n", deployResp.PublicURL)
+	} else {
+		fmt.Printf("   Your API is PRIVATE. Requests require your Project API Key.\n")
+		fmt.Printf("   To make it public, deploy with: aerostack deploy --public\n")
+		fmt.Printf("\n   Test it now (using query param):\n")
+		fmt.Printf("   curl \"%s?apiKey=%s\"\n", deployResp.PublicURL, apiKey)
+		fmt.Printf("\n   Test it now (using header):\n")
+		fmt.Printf("   curl -H \"X-API-Key: %s\" %s\n", apiKey, deployResp.PublicURL)
+	}
+
 	return nil
 }

@@ -80,7 +80,79 @@ func ProvisionCloudflareResources(cfg *devserver.AerostackConfig, env string, pr
 		fmt.Println("   ✓ Updated aerostack.toml")
 	}
 
+	// 2. KV
+	for i := range cfg.KVNamespaces {
+		ns := &cfg.KVNamespaces[i]
+		if !isPlaceholderID(ns.ID) {
+			continue
+		}
+		fmt.Printf("   KV (%s): creating namespace in your account...\n", ns.Binding)
+		id, err := createKV(cfg.Name+"-kv", projectRoot)
+		if err != nil {
+			return fmt.Errorf("KV create failed: %w", err)
+		}
+		ns.ID = id
+		fmt.Printf("   ✓ Created KV namespace → %s\n", id)
+		configPath := filepath.Join(projectRoot, "aerostack.toml")
+		_ = updateConfigValue(configPath, "id", "local-kv", id)
+	}
+
+	// 3. Queues
+	for i := range cfg.Queues {
+		q := &cfg.Queues[i]
+		// Queues don't have IDs in aerostack.toml, just names.
+		// If name is "local-queue", we should create a real one.
+		if q.Name != "local-queue" {
+			continue
+		}
+		prodName := cfg.Name + "-queue"
+		if env != "" {
+			prodName += "-" + env
+		}
+		fmt.Printf("   Queue (%s): creating %q in your account...\n", q.Binding, prodName)
+		if err := createQueue(prodName, projectRoot); err != nil {
+			// Might already exist, we'll try to continue
+			fmt.Printf("   ⚠ Queue creation note: %v\n", err)
+		}
+		q.Name = prodName
+		fmt.Printf("   ✓ Using Queue %q\n", prodName)
+		configPath := filepath.Join(projectRoot, "aerostack.toml")
+		_ = updateConfigValue(configPath, "queue", "local-queue", prodName)
+	}
+
 	return nil
+}
+
+func createKV(name string, projectRoot string) (string, error) {
+	cmd := exec.Command("npx", "-y", "wrangler@latest", "kv:namespace", "create", name)
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("wrangler kv create: %w", err)
+	}
+	matches := uuidRe.FindStringSubmatch(string(out))
+	if len(matches) == 0 {
+		return "", fmt.Errorf("could not parse KV ID")
+	}
+	return matches[0], nil
+}
+
+func createQueue(name string, projectRoot string) error {
+	cmd := exec.Command("npx", "-y", "wrangler@latest", "queues", "create", name)
+	cmd.Dir = projectRoot
+	return cmd.Run()
+}
+
+func updateConfigValue(path, key, oldVal, newVal string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	content := string(data)
+	oldPattern := key + ` = "` + regexp.QuoteMeta(oldVal) + `"`
+	newReplacement := key + ` = "` + newVal + `"`
+	content = strings.Replace(content, oldPattern, newReplacement, 1)
+	return os.WriteFile(path, []byte(content), 0644)
 }
 
 func createD1(databaseName string, projectRoot string) (string, error) {
