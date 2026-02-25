@@ -1,6 +1,0 @@
-node_modules/
-wrangler.toml
-.aerostack/
-dist/
-.dev.vars
-.env

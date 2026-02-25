@@ -30,8 +30,6 @@ Available templates:
   • blank      - Minimal Worker (default)
   • api        - REST API with Hono
   • api-neon   - REST API with Hono and Neon
-  • express    - Express.js on Workers
-  • express-neon - Express.js with Neon
   • multi-func - Multi-function sharing code
   • cron-neon  - Scheduled task with Neon
   • webhook-neon - Webhook processor with Neon
@@ -73,8 +71,6 @@ Example:
 						huh.NewOption("Blank (Minimal Worker)", "blank"),
 						huh.NewOption("API (Hono)", "api"),
 						huh.NewOption("API + Neon (Hono)", "api-neon"),
-						huh.NewOption("Express.js", "express"),
-						huh.NewOption("Express.js + Neon", "express-neon"),
 						huh.NewOption("Multi-Function", "multi-func"),
 						huh.NewOption("Cron + Neon", "cron-neon"),
 						huh.NewOption("Webhook + Neon", "webhook-neon"),

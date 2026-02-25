@@ -382,11 +382,12 @@ func GenerateWranglerToml(cfg *AerostackConfig, outputPath string) error {
 		// Minimal mock: exports most things as empty objects or dummy functions
 		mockContent := `
 const noop = () => {};
-const emptyObj = {};
+const emptyObj = { prototype: {} };
 const handler = {
 	get: (target, prop) => {
 		if (prop === 'prototype') return emptyObj;
 		if (prop === 'on' || prop === 'once' || prop === 'emit') return noop;
+		if (Reflect.has(target, prop)) return target[prop];
 		return proxy;
 	},
 	construct: () => proxy,
@@ -394,22 +395,21 @@ const handler = {
 };
 const proxy = new Proxy(noop, handler);
 
-Object.assign(proxy, { 
-	isatty: () => false,
-	createServer: () => ({ listen: () => ({ on: () => {} }), on: () => {} }),
-	readFileSync: () => { throw new Error("fs.readFileSync is not supported in Workers. Use cache or bindings.") },
-	METHODS: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
-	STATUS_CODES: { 200: "OK", 404: "Not Found", 500: "Internal Server Error" },
-	IncomingMessage: proxy,
-	ServerResponse: proxy,
-	Agent: proxy,
-	Socket: proxy,
-	networkInterfaces: () => ({}),
-	arch: () => "arm64",
-	platform: () => "linux"
-});
+export const isatty = () => false;
+export const createServer = () => ({ listen: () => ({ on: () => {} }), on: () => {} });
+export const readFileSync = () => { throw new Error("fs.readFileSync is not supported in Workers.") };
+export const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
+export const STATUS_CODES = { 200: "OK", 404: "Not Found", 500: "Internal Server Error" };
+export const IncomingMessage = proxy;
+export const ServerResponse = proxy;
+export const Server = proxy;
+export const Agent = proxy;
+export const Socket = proxy;
+export const networkInterfaces = () => ({});
+export const arch = () => "arm64";
+export const platform = () => "linux";
 
-module.exports = proxy;
+export default proxy;
 `
 		os.WriteFile(mockPath, []byte(mockContent), 0644)
 
