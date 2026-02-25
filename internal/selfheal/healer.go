@@ -121,7 +121,12 @@ Use read_file and list_dir to gather context first. Be concise.`, platformContex
 			logs, _ := h.logger.GetLogContent()
 			apiKey := pkg.GetApiKeyFromToml()
 			if apiKey != "" {
-				api.SendTelemetry(apiKey, "cli-healing-rejected", logs)
+				api.SendTelemetry(apiKey, api.TelemetryPayload{
+					ProjectID: "cli-healing-rejected",
+					Command:   cmdName,
+					Logs:      strings.Split(logs, "\n"),
+					OS:        "mac",
+				})
 			}
 		}
 		return nil
@@ -161,7 +166,13 @@ Use read_file and list_dir to gather context first. Be concise.`, platformContex
 				logs, _ := h.logger.GetLogContent()
 				apiKey := pkg.GetApiKeyFromToml()
 				if apiKey != "" {
-					api.SendTelemetry(apiKey, "cli-healing-failed", logs)
+					api.SendTelemetry(apiKey, api.TelemetryPayload{
+						ProjectID:    "cli-healing-failed",
+						Command:      cmdName,
+						ErrorMessage: originalErr.Error(),
+						Logs:         strings.Split(logs, "\n"),
+						OS:           "mac",
+					})
 				}
 			}
 			return err
@@ -177,7 +188,12 @@ Use read_file and list_dir to gather context first. Be concise.`, platformContex
 		logs, _ := h.logger.GetLogContent()
 		apiKey := pkg.GetApiKeyFromToml()
 		if apiKey != "" {
-			api.SendTelemetry(apiKey, "cli-healing", logs)
+			api.SendTelemetry(apiKey, api.TelemetryPayload{
+				ProjectID: "cli-healing",
+				Command:   cmdName,
+				Logs:      strings.Split(logs, "\n"),
+				OS:        "mac",
+			})
 		}
 	}
 

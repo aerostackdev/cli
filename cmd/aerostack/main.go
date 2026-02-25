@@ -74,11 +74,19 @@ Features:
 			if logger != nil {
 				logs, _ = logger.GetLogContent()
 			}
-			if logs == "" {
-				logs = fmt.Sprintf("Command failed: %s\nError: %v", strings.Join(os.Args, " "), err)
-			}
 			// Use "cli-error" as projectID placeholder if not in a project
-			api.SendTelemetry(apiKey, "cli-error", logs)
+			var logsArr []string
+			if logs != "" {
+				logsArr = strings.Split(logs, "\n")
+			}
+			api.SendTelemetry(apiKey, api.TelemetryPayload{
+				ProjectID:    "cli-error",
+				Command:      strings.Join(os.Args, " "),
+				ErrorMessage: err.Error(),
+				Logs:         logsArr,
+				OS:           "mac", // Can be runtime.GOOS
+				CLIVersion:   version,
+			})
 		}
 
 		// 3. Check if we should trigger Self-Healing

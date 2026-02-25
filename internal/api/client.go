@@ -12,7 +12,7 @@ import (
 )
 
 var httpClient = &http.Client{
-	Timeout: 10 * time.Second,
+	Timeout: 30 * time.Second,
 }
 
 func getBaseURL() string {
@@ -110,19 +110,22 @@ func Validate(apiKey string) (*ValidateResponse, error) {
 	return &out, nil
 }
 
-// SendTelemetry pushes error logs to the Aerostack API for system learning.
-func SendTelemetry(apiKey, projectID, errorLog string) error {
+type TelemetryPayload struct {
+	ProjectID    string   `json:"projectId"`
+	Command      string   `json:"command"`
+	ErrorMessage string   `json:"error_message"`
+	ErrorStack   string   `json:"error_stack"`
+	Logs         []string `json:"logs"`
+	OS           string   `json:"os"`
+	CLIVersion   string   `json:"cli_version"`
+}
+
+func SendTelemetry(apiKey string, payload TelemetryPayload) error {
 	if apiKey == "" {
 		return fmt.Errorf("API key required for telemetry")
 	}
 
 	url := getBaseURL() + "/api/v1/cli/telemetry/errors"
-	payload := map[string]string{
-		"projectId": projectID,
-		"logs":      errorLog,
-		"os":        "mac", // Can be runtime.GOOS
-	}
-
 	jsonBody, _ := json.Marshal(payload)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
@@ -288,6 +291,9 @@ func Deploy(apiKey string, files map[string]string, env string, projectName stri
 		msg := errBody.Error.Message
 		if msg == "" {
 			msg = string(body)
+		}
+		if errBody.Error.Details != "" {
+			msg = fmt.Sprintf("%s - %s", msg, errBody.Error.Details)
 		}
 		return nil, fmt.Errorf("deploy failed (%d): %s", resp.StatusCode, msg)
 	}
