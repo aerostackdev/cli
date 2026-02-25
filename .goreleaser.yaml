@@ -53,6 +53,7 @@ changelog:
       - '^chore:'
 
 release:
+  replace_existing_artifacts: true
   github:
     owner: aerostackdev
     name: cli
