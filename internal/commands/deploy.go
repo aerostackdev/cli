@@ -353,6 +353,27 @@ module.exports = proxy;
 		d1s = overrides
 	}
 
+	// Filter out stub/local-only bindings that only exist for local dev
+	// (e.g. 'local-queue', 'local-kv') — these are not real Cloudflare resources
+	var realQueues []devserver.Queue
+	for _, q := range cfg.Queues {
+		if !strings.HasPrefix(q.Name, "local-") {
+			realQueues = append(realQueues, q)
+		}
+	}
+	var realKVNamespaces []devserver.KVNamespace
+	for _, ns := range cfg.KVNamespaces {
+		if !strings.HasPrefix(ns.ID, "local-") {
+			realKVNamespaces = append(realKVNamespaces, ns)
+		}
+	}
+	var realD1s []devserver.D1Database
+	for _, db := range d1s {
+		if db.DatabaseID != "aerostack-local" && !strings.HasPrefix(db.DatabaseID, "local-") {
+			realD1s = append(realD1s, db)
+		}
+	}
+
 	type BindingPayload struct {
 		D1Databases  []devserver.D1Database  `json:"d1_databases,omitempty"`
 		KVNamespaces []devserver.KVNamespace `json:"kv_namespaces,omitempty"`
@@ -361,9 +382,9 @@ module.exports = proxy;
 	}
 
 	bindingsPayload := BindingPayload{
-		D1Databases:  d1s,
-		KVNamespaces: cfg.KVNamespaces,
-		Queues:       cfg.Queues,
+		D1Databases:  realD1s,
+		KVNamespaces: realKVNamespaces,
+		Queues:       realQueues,
 		AI:           cfg.AI,
 	}
 

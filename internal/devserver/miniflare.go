@@ -36,6 +36,7 @@ type AerostackConfig struct {
 	KVNamespaces []KVNamespace
 	Queues       []Queue
 	AI           bool
+	Vars         map[string]string
 }
 
 // KVNamespace represents a KV namespace binding
@@ -79,6 +80,7 @@ func ParseAerostackToml(path string) (*AerostackConfig, error) {
 		D1Databases:       []D1Database{},
 		PostgresDatabases: []PostgresDatabase{},
 		EnvOverrides:      map[string][]D1Database{},
+		Vars:              map[string]string{},
 	}
 
 	// Parse env-specific overrides ([env.staging], [env.production])
@@ -111,6 +113,9 @@ func ParseAerostackToml(path string) (*AerostackConfig, error) {
 
 	// Parse [[queues.producers]] blocks
 	cfg.Queues = parseQueues(content)
+
+	// Parse [vars] block
+	cfg.Vars = parseVars(content)
 
 	// Defaults
 	if cfg.Main == "" || cfg.Main == "dist/worker.js" {
@@ -324,6 +329,32 @@ func parseQueues(content string) []Queue {
 	return qs
 }
 
+// parseVars parses the [vars] block from aerostack.toml
+func parseVars(content string) map[string]string {
+	vars := make(map[string]string)
+	// Simple [vars] block parsing
+	re := regexp.MustCompile(`(?m)^\[vars\]\s*\n([\s\S]*?)(?:\n\[|\z)`)
+	m := re.FindStringSubmatch(content)
+	if len(m) > 1 {
+		inner := m[1]
+		lines := strings.Split(inner, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				val := strings.TrimSpace(parts[1])
+				val = strings.Trim(val, "\"")
+				vars[key] = val
+			}
+		}
+	}
+	return vars
+}
+
 func extractTomlInt(content, key string) int {
 	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(key) + `\s*=\s*(\d+)`)
 	m := re.FindStringSubmatch(content)
@@ -474,6 +505,26 @@ export default proxy;
 		sb.WriteString("binding = \"AI\"\n\n")
 	}
 
+	// Environment variables [vars]
+	sb.WriteString("[vars]\n")
+	// Inject AEROSTACK_API_URL if not already set by user
+	if _, ok := cfg.Vars["AEROSTACK_API_URL"]; !ok {
+		// Default to localhost:8787 for internal routing if not provided
+		// During deploy, this will be overridden by the Aerostack API if deploying to Aerostack.
+		sb.WriteString("AEROSTACK_API_URL = \"http://localhost:8787\"\n")
+	}
+	for k, v := range cfg.Vars {
+		sb.WriteString(fmt.Sprintf("%s = %q\n", k, v))
+	}
+	sb.WriteString("\n")
+
+	// Service bindings (for multi-worker communication)
+	for _, svc := range cfg.Services {
+		sb.WriteString("[[services]]\n")
+		sb.WriteString(fmt.Sprintf("binding = %q\n", strings.ToUpper(svc.Name)))
+		sb.WriteString(fmt.Sprintf("service = %q\n\n", cfg.Name+"-"+svc.Name))
+	}
+
 	// Hyperdrive bindings for Postgres (local: set CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<BINDING>; remote: add id from wrangler hyperdrive create)
 	for _, pg := range cfg.PostgresDatabases {
 		sb.WriteString("[[hyperdrive]]\n")
@@ -517,6 +568,21 @@ export default proxy;
 		// 4. AI
 		if cfg.AI {
 			sb.WriteString(fmt.Sprintf("[env.%s.ai]\nbinding = \"AI\"\n\n", envName))
+		}
+
+		// 5. Vars
+		sb.WriteString(fmt.Sprintf("[env.%s.vars]\n", envName))
+		if _, ok := cfg.Vars["AEROSTACK_API_URL"]; !ok {
+			sb.WriteString("AEROSTACK_API_URL = \"http://localhost:8787\"\n")
+		}
+		for k, v := range cfg.Vars {
+			sb.WriteString(fmt.Sprintf("%s = %q\n", k, v))
+		}
+		sb.WriteString("\n")
+
+		// 6. Services
+		for _, svc := range cfg.Services {
+			sb.WriteString(fmt.Sprintf("[[env.%s.services]]\nbinding = %q\nservice = %q\n\n", envName, strings.ToUpper(svc.Name), cfg.Name+"-"+svc.Name))
 		}
 	}
 
@@ -705,4 +771,33 @@ func EnsureDefaultQueues(cfg *AerostackConfig) {
 // EnsureDefaultAI adds an AI binding if missing
 func EnsureDefaultAI(cfg *AerostackConfig) {
 	cfg.AI = true
+}
+
+// StripLocalStubBindings removes stub bindings that only exist for local development
+// (e.g. database_id = 'aerostack-local', queue name starting with 'local-', KV id starting with 'local-').
+// Must be called before deploying to real Cloudflare / Aerostack to avoid 404 errors.
+func StripLocalStubBindings(cfg *AerostackConfig) {
+	var realQueues []Queue
+	for _, q := range cfg.Queues {
+		if !strings.HasPrefix(q.Name, "local-") {
+			realQueues = append(realQueues, q)
+		}
+	}
+	cfg.Queues = realQueues
+
+	var realKV []KVNamespace
+	for _, ns := range cfg.KVNamespaces {
+		if !strings.HasPrefix(ns.ID, "local-") {
+			realKV = append(realKV, ns)
+		}
+	}
+	cfg.KVNamespaces = realKV
+
+	var realD1 []D1Database
+	for _, db := range cfg.D1Databases {
+		if db.DatabaseID != "aerostack-local" && !strings.HasPrefix(db.DatabaseID, "local-") {
+			realD1 = append(realD1, db)
+		}
+	}
+	cfg.D1Databases = realD1
 }
