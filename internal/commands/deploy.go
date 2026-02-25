@@ -230,6 +230,10 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 		mainEntry = "src/index.ts"
 	}
 
+	// Clean dist directory to avoid stale builds
+	os.RemoveAll("dist")
+	os.MkdirAll("dist", 0755)
+
 	// Check for nodejs_compat_v2
 	hasNodeCompatV2 := false
 	for _, flag := range cfg.CompatibilityFlags {
@@ -238,8 +242,6 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 			break
 		}
 	}
-
-	esbuildFlags := "--bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared --minify --external:node:* --external:cloudflare:*"
 
 	// Create node-mocks for both legacy and nodejs_compat_v2 paths if they load modules like express
 	mockDir := ".aerostack"
@@ -282,37 +284,48 @@ module.exports = proxy;
 	// esbuild requires relative paths to start with ./ or ../ or it treats them as bare modules
 	mockPathForEsbuild := "./" + filepath.ToSlash(filepath.Join(".aerostack", "node-mocks.cjs"))
 
-	// Mock common unsupported modules
-	unsupported := []string{"fs", "os", "http", "https", "net", "dns", "tty", "tls", "child_process"}
-	for _, m := range unsupported {
-		esbuildFlags += fmt.Sprintf(" --alias:%s=%s --alias:node:%s=%s", m, mockPathForEsbuild, m, mockPathForEsbuild)
+	args := []string{
+		"--yes",
+		"esbuild",
+		mainEntry,
+		"--bundle",
+		"--outfile=dist/worker.js",
+		"--format=esm",
+		"--alias:@shared=./shared",
+		"--minify",
+		"--external:node:*",
+		"--external:cloudflare:*",
 	}
 
-	// Add createRequire shim and prototype fixes
-	esbuildFlags += " --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire('/'); if (typeof Buffer !== 'undefined' && !Buffer.prototype.hasOwnProperty) Buffer.prototype.hasOwnProperty = Object.prototype.hasOwnProperty;\""
+	// Add banner with createRequire shim and prototype fixes
+	banner := "import { createRequire } from 'node:module'; const require = createRequire('/'); if (typeof Buffer !== 'undefined' && !Buffer.prototype.hasOwnProperty) Buffer.prototype.hasOwnProperty = Object.prototype.hasOwnProperty;"
+	args = append(args, "--banner:js="+banner)
+
+	// Add aliases for Node.js modules
+	nodeModules := []string{"path", "url", "crypto", "events", "util", "stream", "buffer", "string_decoder", "assert", "timers", "async_hooks", "console", "querystring", "zlib", "punycode"}
 
 	if hasNodeCompatV2 {
-		// nodejs_compat handles Node.js built-ins natively.
-		// We avoid --platform=node to prevent dynamic require() issues.
-		nodeModules := []string{"path", "url", "crypto", "events", "util", "stream", "buffer", "string_decoder", "assert", "timers", "async_hooks", "console", "querystring", "zlib", "punycode"}
 		for _, m := range nodeModules {
-			esbuildFlags += fmt.Sprintf(" --alias:%s=node:%s", m, m)
+			args = append(args, fmt.Sprintf("--alias:%s=node:%s", m, m))
 		}
 	} else {
 		// Legacy / Default
-		esbuildFlags += " --platform=node"
-		nodeModules := []string{"path", "url", "crypto", "events", "util", "stream", "buffer", "string_decoder", "assert", "timers", "async_hooks", "console", "querystring", "zlib", "punycode"}
+		args = append(args, "--platform=node")
 		for _, m := range nodeModules {
-			esbuildFlags += fmt.Sprintf(" --alias:%s=node:%s", m, m)
+			args = append(args, fmt.Sprintf("--alias:%s=node:%s", m, m))
 		}
 	}
 
-	// Add createRequire shim for ESM bundles
-	esbuildFlags += " --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire('/');\""
+	// Mock common unsupported modules
+	unsupported := []string{"fs", "os", "http", "https", "net", "dns", "tty", "tls", "child_process"}
+	for _, m := range unsupported {
+		args = append(args, fmt.Sprintf("--alias:%s=%s", m, mockPathForEsbuild))
+		args = append(args, fmt.Sprintf("--alias:node:%s=%s", m, mockPathForEsbuild))
+	}
 
-	buildCmd := fmt.Sprintf("npx --yes esbuild %q %s", mainEntry, esbuildFlags)
+	fmt.Printf("📦 Bundling %s...\n", mainEntry)
 
-	cmd := exec.Command("sh", "-c", buildCmd)
+	cmd := exec.Command("npx", args...)
 	cmd.Dir = "."
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
