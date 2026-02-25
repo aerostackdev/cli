@@ -223,7 +223,7 @@ type DeployError struct {
 	} `json:"error"`
 }
 
-func Deploy(apiKey string, files map[string]string, env string, projectName string, isPublic bool, isPrivate bool, bindingsJSON string) (*DeployResponse, error) {
+func Deploy(apiKey string, files map[string]string, env string, projectName string, isPublic bool, isPrivate bool, bindingsJSON string, compatDate string, compatFlags []string) (*DeployResponse, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 
@@ -239,6 +239,14 @@ func Deploy(apiKey string, files map[string]string, env string, projectName stri
 		_ = w.WriteField("isPublic", "true")
 	} else if isPrivate {
 		_ = w.WriteField("isPublic", "false")
+	}
+
+	if compatDate != "" {
+		_ = w.WriteField("compatibility_date", compatDate)
+	}
+	if len(compatFlags) > 0 {
+		flagsJSON, _ := json.Marshal(compatFlags)
+		_ = w.WriteField("compatibility_flags", string(flagsJSON))
 	}
 
 	for name, path := range files {
@@ -358,7 +366,7 @@ func CommunityPush(apiKey string, fn CommunityFunction) (*CommunityPushResponse,
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 201 {
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
 		return nil, fmt.Errorf("push failed (%d): %s", resp.StatusCode, string(body))
 	}
 

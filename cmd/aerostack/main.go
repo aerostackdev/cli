@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	version = "v1.5.4"
+	version = "v1.5.6"
 	commit  = "none"
 	date    = "unknown"
 )
@@ -60,6 +60,7 @@ Features:
 	rootCmd.AddCommand(commands.NewFunctionsCommand())
 	rootCmd.AddCommand(commands.NewMigrateCommand())
 
+	fmt.Println("DEBUG: About to Execute rootCmd")
 	if err := rootCmd.Execute(); err != nil {
 		// 1. Basic error print
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -105,17 +106,6 @@ Features:
 }
 
 func shouldHeal(err error) bool {
-	// Don't heal on simple usage errors or interruptions
-	msg := err.Error()
-	if strings.Contains(msg, "interrupt") || strings.Contains(msg, "canceled") {
-		return false
-	}
-	// Check for API key: Azure, OpenAI, Anthropic, or Aerostack backend (aerostack.toml or credentials)
-	if os.Getenv("AZURE_OPENAI_API_KEY") != "" || os.Getenv("OPENAI_API_KEY") != "" || os.Getenv("ANTHROPIC_API_KEY") != "" {
-		return true
-	}
-	if credentials.GetAPIKey() != "" {
-		return true
-	}
+	// AI Self-healing disabled globally due to hangs during API errors
 	return false
 }

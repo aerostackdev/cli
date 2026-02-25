@@ -5,6 +5,22 @@ All notable changes to the Aerostack CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.6] - 2026-02-25
+
+### Added
+- **CLI Error Details**: Added ability to view detailed CLI error logs and telemetry in the Admin UI.
+
+## [1.5.5] - 2026-02-24
+
+### Fixed
+- **Express Deployment**: Fixed issue where `nodejs_compat_v2` flag was not correctly passed during deployment.
+- **Express Bundling**: Resolved bundling errors in Express templates by optimizing build configuration.
+
+## [1.5.4] - 2026-02-24
+
+### Fixed
+- **Windows Build/Run**: Resolved `syscall.Kill` errors on Windows by abstracting process termination logic.
+
 ## [1.5.3] - 2026-02-24
 
 ### Fixed

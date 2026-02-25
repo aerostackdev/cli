@@ -8,7 +8,7 @@ app.use(express.json());
 // Workers environment middleware
 app.use((req, res, next) => {
   // @ts-ignore - Workers environment is attached to req in cloudflare:node
-  const env = req.env || (req as any).env;
+  const env = (req as any).env;
   if (env) sdk.init(env);
   next();
 });
@@ -55,6 +55,9 @@ app.get("/test/ai", async (req, res) => {
   }
 });
 
+// We recommend using app.listen(8080) for cloudflare:node compatibility
+// but if you experience "createServer not implemented" issues, you can
+// use the httpServerHandler export directly.
 app.listen(8080);
 
 export default {

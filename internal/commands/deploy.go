@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/aerostackdev/cli/internal/agent"
 	"github.com/aerostackdev/cli/internal/api"
@@ -71,8 +72,17 @@ Examples:
 
 			// 2. Actual Deploy Logic
 			if err := deployService(serviceName, environment, allServices, ownAccount, isPublic, isPrivate); err != nil {
+				importStrings := true // just a flag to know we might need strings package
+				_ = importStrings
+
+				fmt.Printf("\nDeployment Failed! Error details:\n%v\n\n", err)
+
 				// 3. Failure Analysis
-				_ = deployer.AnalyzeFailure(cmd.Context(), err)
+				// Skip AI analysis for obvious auth errors
+				errStr := err.Error()
+				if !strings.Contains(errStr, "API key invalid") && !strings.Contains(errStr, "not logged in") && !strings.Contains(errStr, "401") {
+					_ = deployer.AnalyzeFailure(cmd.Context(), err)
+				}
 				return err
 			}
 
@@ -219,7 +229,7 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 	if mainEntry == "" {
 		mainEntry = "src/index.ts"
 	}
-	buildCmd := fmt.Sprintf("npx esbuild %q --bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared --minify", mainEntry)
+	buildCmd := fmt.Sprintf("npx --yes esbuild %q --bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared --minify --external:node:* --external:cloudflare:* --platform=node --alias:path=node:path --alias:url=node:url --alias:crypto=node:crypto --alias:events=node:events --alias:util=node:util --alias:stream=node:stream --alias:buffer=node:buffer --alias:os=node:os --alias:fs=node:fs --alias:http=node:http --alias:https=node:https --alias:tty=node:tty --alias:zlib=node:zlib --alias:string_decoder=node:string_decoder --alias:assert=node:assert --alias:dns=node:dns --alias:net=node:net --alias:tls=node:tls --alias:querystring=node:querystring --alias:timers=node:timers --alias:async_hooks=node:async_hooks --alias:console=node:console", mainEntry)
 
 	cmd := exec.Command("sh", "-c", buildCmd)
 	cmd.Dir = "."
@@ -243,7 +253,7 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 			// Cloudflare Workers expect the main entry as worker.js.
 			localPath := filepath.Join(distPath, name)
 			if name == "worker.js" {
-				files["worker.js"] = localPath
+				files["worker"] = localPath
 			} else {
 				// Upload other files as modules
 				files[name] = localPath
@@ -251,7 +261,7 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 		}
 	}
 
-	if _, ok := files["worker.js"]; !ok {
+	if _, ok := files["worker"]; !ok {
 		return fmt.Errorf("build output worker.js not found in %s", distPath)
 	}
 
@@ -279,7 +289,7 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 	bData, _ := json.Marshal(bindingsPayload)
 	bindingsJSON := string(bData)
 
-	deployResp, err := api.Deploy(apiKey, files, env, serviceName, isPublic, isPrivate, bindingsJSON)
+	deployResp, err := api.Deploy(apiKey, files, env, serviceName, isPublic, isPrivate, bindingsJSON, cfg.CompatibilityDate, cfg.CompatibilityFlags)
 	if err != nil {
 		return err
 	}
@@ -288,7 +298,7 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 	fmt.Printf("   URL: %s\n", deployResp.PublicURL)
 
 	if deployResp.Project.Slug != "" {
-		fmt.Printf("   Dashboard: https://aerocall.ai/project/%s\n", deployResp.Project.Slug)
+		fmt.Printf("   Dashboard: %s\n", deployResp.PublicURL)
 	}
 
 	fmt.Printf("\n🔒 Authentication Status:\n")

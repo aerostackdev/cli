@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/aerostackdev/cli/internal/api"
@@ -12,6 +13,15 @@ import (
 	"github.com/aerostackdev/cli/internal/pkg"
 	"github.com/spf13/cobra"
 )
+
+// slugifyName normalizes a name to a slug (lowercase, hyphens). Must match API slugify for upsert.
+func slugifyName(s string) string {
+	s = strings.TrimSpace(strings.ToLower(s))
+	s = regexp.MustCompile(`[^\w\s-]`).ReplaceAllString(s, "")
+	s = regexp.MustCompile(`[\s_]+`).ReplaceAllString(s, "-")
+	s = regexp.MustCompile(`-+`).ReplaceAllString(s, "-")
+	return strings.Trim(s, "-")
+}
 
 // NewFunctionsCommand creates the 'aerostack functions' root command
 func NewFunctionsCommand() *cobra.Command {
@@ -174,9 +184,17 @@ func NewFunctionsPushCommand() *cobra.Command {
 				if confType, ok := configData["type"].(string); ok && confType != "" {
 					fn.Category = confType // Maps schema 'type' to DB 'category'
 				}
+				if confVersion, ok := configData["version"].(string); ok && confVersion != "" {
+					fn.Version = confVersion
+				}
 
 				// Update local name variable for logging
 				name = fn.Name
+			}
+			// Slug for upsert: API matches by (developer, slug); derive from name so push updates same function
+			fn.Slug = slugifyName(fn.Name)
+			if fn.Version == "" {
+				fn.Version = "1.0.0"
 			}
 
 			// Try to read README.md in the same directory

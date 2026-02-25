@@ -351,10 +351,29 @@ func GenerateWranglerToml(cfg *AerostackConfig, outputPath string) error {
 	esbuildFlags := "--bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared --minify"
 	if hasNodeCompat {
 		// nodejs_compat handles Node.js built-ins natively in Cloudflare Workers.
-		// Do NOT add a createRequire shim — import.meta.url is undefined in Workers
-		// and would cause a runtime crash. External node:* and cloudflare:* are still
-		// needed so esbuild doesn't try to bundle them.
-		esbuildFlags += " --platform=node --external:node:* --external:cloudflare:*"
+		esbuildFlags += " --external:node:* --external:cloudflare:* --platform=node"
+		// Map bare node modules to node: prefixed ones for Workers compatibility
+		nodeModules := []string{"path", "url", "crypto", "events", "util", "stream", "buffer", "os", "fs", "http", "https", "zlib", "string_decoder", "assert", "timers", "async_hooks", "console"}
+		for _, m := range nodeModules {
+			esbuildFlags += fmt.Sprintf(" --alias:%s=node:%s", m, m)
+		}
+
+		// Some modules are NOT supported in Workers (like tty, net, dns).
+		// We provide a minimal mock to prevent runtime crashes for legacy dependencies.
+		projectDir := filepath.Dir(outputPath)
+		mockDir := filepath.Join(projectDir, ".aerostack")
+		os.MkdirAll(mockDir, 0755)
+		mockPath := filepath.Join(mockDir, "node-mocks.js")
+		mockContent := "export const isatty = () => false; export const createServer = () => ({ listen: () => ({ on: () => {} }), on: () => {} }); export default { isatty, createServer };"
+		os.WriteFile(mockPath, []byte(mockContent), 0644)
+
+		esbuildFlags += fmt.Sprintf(" --alias:node:tty=%s --alias:tty=%s", mockPath, mockPath)
+		esbuildFlags += fmt.Sprintf(" --alias:node:net=%s --alias:net=%s", mockPath, mockPath)
+		esbuildFlags += fmt.Sprintf(" --alias:node:dns=%s --alias:dns=%s", mockPath, mockPath)
+
+		// Add createRequire shim for ESM bundles — Workers doesn't support import.meta.url
+		// so we use a dummy path.
+		esbuildFlags += " --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire('/');\""
 	}
 	buildCmd := fmt.Sprintf("npx esbuild %q %s", cfg.Main, esbuildFlags)
 
@@ -409,6 +428,7 @@ func GenerateWranglerToml(cfg *AerostackConfig, outputPath string) error {
 	for _, pg := range cfg.PostgresDatabases {
 		sb.WriteString("[[hyperdrive]]\n")
 		sb.WriteString(fmt.Sprintf("binding = %q\n", pg.Binding))
+		sb.WriteString("id = \"local-hyperdrive\"\n")
 		sb.WriteString("# For local: set CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_" + pg.Binding + " in .env\n")
 		sb.WriteString("# For remote: run 'wrangler hyperdrive create <name> --connection-string=...' and add id here\n\n")
 	}

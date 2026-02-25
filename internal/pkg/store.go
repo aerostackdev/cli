@@ -45,16 +45,19 @@ func NewStore(projectRoot string) (*Store, error) {
 	}
 
 	dbPath := filepath.Join(aerostackDir, "pkg.db")
+	fmt.Println("DEBUG: Opening DB at", dbPath)
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open pkg database: %w", err)
 	}
 
+	fmt.Println("DEBUG: Executing DB schema")
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
+	fmt.Println("DEBUG: Store initialized successfully")
 	return &Store{db: db}, nil
 }
 

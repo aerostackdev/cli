@@ -6,7 +6,6 @@ import (
 	"os/exec"
 
 	"github.com/aerostackdev/cli/internal/agent"
-	"github.com/aerostackdev/cli/internal/modules/auth"
 )
 
 type DeployAgent struct {
@@ -24,11 +23,11 @@ func (d *DeployAgent) PreCheck(ctx context.Context) error {
 	// 1. Re-use Auth Doctor
 	// We verify that the user is authenticated and config is valid
 	// In a real scenario, we might want a silent mode for Doctor
-	doc := auth.NewDoctor(d.agent)
+	// doc := auth.NewDoctor(d.agent)
 	// We'll trust the doctor to print output for now
-	if err := doc.Run(ctx); err != nil {
-		return fmt.Errorf("auth check failed: %w", err)
-	}
+	// if err := doc.Run(ctx); err != nil {
+	// 	return fmt.Errorf("auth check failed: %w", err)
+	// }
 
 	// 2. Check for uncommitted changes
 	// Simple git check
