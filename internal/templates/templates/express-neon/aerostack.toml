@@ -1,8 +1,8 @@
 name = "{{.ProjectName}}"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
-# Support for Express (nodejs_compat)
-compatibility_flags = ["nodejs_compat"]
+# Support for Express (nodejs_compat_v2)
+compatibility_flags = ["nodejs_compat_v2"]
 
 [[postgres_databases]]
 binding = "PG"

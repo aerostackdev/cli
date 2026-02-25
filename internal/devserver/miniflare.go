@@ -349,31 +349,81 @@ func GenerateWranglerToml(cfg *AerostackConfig, outputPath string) error {
 
 	// Use dist/worker.js when we have a build step (@shared alias)
 	esbuildFlags := "--bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared --minify"
+
+	// Check for nodejs_compat_v2 vs nodejs_compat
+	hasNodeCompatV2 := false
+	for _, flag := range cfg.CompatibilityFlags {
+		if flag == "nodejs_compat_v2" {
+			hasNodeCompatV2 = true
+			break
+		}
+	}
+
 	if hasNodeCompat {
 		// nodejs_compat handles Node.js built-ins natively in Cloudflare Workers.
-		esbuildFlags += " --external:node:* --external:cloudflare:* --platform=node"
-		// Map bare node modules to node: prefixed ones for Workers compatibility
-		nodeModules := []string{"path", "url", "crypto", "events", "util", "stream", "buffer", "os", "fs", "http", "https", "zlib", "string_decoder", "assert", "timers", "async_hooks", "console"}
+		esbuildFlags += " --external:node:* --external:cloudflare:*"
+		if !hasNodeCompatV2 {
+			esbuildFlags += " --platform=node"
+		}
+
+		// Map bare node modules ONLY for modules supported natively in Workers.
+		// mapping fs -> node:fs will crash because node:fs is UNSUPPORTED.
+		nodeModules := []string{"path", "url", "crypto", "events", "util", "stream", "buffer", "string_decoder", "assert", "timers", "async_hooks", "console", "querystring", "zlib", "punycode"}
 		for _, m := range nodeModules {
 			esbuildFlags += fmt.Sprintf(" --alias:%s=node:%s", m, m)
 		}
 
-		// Some modules are NOT supported in Workers (like tty, net, dns).
+		// Some modules are NOT supported in Workers (like fs, os, http, https, net, dns, tty, tls).
 		// We provide a minimal mock to prevent runtime crashes for legacy dependencies.
 		projectDir := filepath.Dir(outputPath)
 		mockDir := filepath.Join(projectDir, ".aerostack")
 		os.MkdirAll(mockDir, 0755)
-		mockPath := filepath.Join(mockDir, "node-mocks.js")
-		mockContent := "export const isatty = () => false; export const createServer = () => ({ listen: () => ({ on: () => {} }), on: () => {} }); export default { isatty, createServer };"
+		mockPath := filepath.Join(mockDir, "node-mocks.cjs")
+		// Minimal mock: exports most things as empty objects or dummy functions
+		mockContent := `
+const noop = () => {};
+const emptyObj = {};
+const handler = {
+	get: (target, prop) => {
+		if (prop === 'prototype') return emptyObj;
+		if (prop === 'on' || prop === 'once' || prop === 'emit') return noop;
+		return proxy;
+	},
+	construct: () => proxy,
+	apply: () => proxy
+};
+const proxy = new Proxy(noop, handler);
+
+Object.assign(proxy, { 
+	isatty: () => false,
+	createServer: () => ({ listen: () => ({ on: () => {} }), on: () => {} }),
+	readFileSync: () => { throw new Error("fs.readFileSync is not supported in Workers. Use cache or bindings.") },
+	METHODS: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
+	STATUS_CODES: { 200: "OK", 404: "Not Found", 500: "Internal Server Error" },
+	IncomingMessage: proxy,
+	ServerResponse: proxy,
+	Agent: proxy,
+	Socket: proxy,
+	networkInterfaces: () => ({}),
+	arch: () => "arm64",
+	platform: () => "linux"
+});
+
+module.exports = proxy;
+`
 		os.WriteFile(mockPath, []byte(mockContent), 0644)
 
-		esbuildFlags += fmt.Sprintf(" --alias:node:tty=%s --alias:tty=%s", mockPath, mockPath)
-		esbuildFlags += fmt.Sprintf(" --alias:node:net=%s --alias:net=%s", mockPath, mockPath)
-		esbuildFlags += fmt.Sprintf(" --alias:node:dns=%s --alias:dns=%s", mockPath, mockPath)
+		// esbuild requires relative paths to start with ./ or ../ or it treats them as bare modules
+		mockPathForEsbuild := "./" + filepath.ToSlash(filepath.Join(".aerostack", "node-mocks.cjs"))
 
-		// Add createRequire shim for ESM bundles — Workers doesn't support import.meta.url
-		// so we use a dummy path.
-		esbuildFlags += " --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire('/');\""
+		// Mock common unsupported modules
+		unsupported := []string{"fs", "os", "http", "https", "net", "dns", "tty", "tls", "child_process"}
+		for _, m := range unsupported {
+			esbuildFlags += fmt.Sprintf(" --alias:%s=%s --alias:node:%s=%s", m, mockPathForEsbuild, m, mockPathForEsbuild)
+		}
+
+		// Add createRequire shim and prototype fixes
+		esbuildFlags += " --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire('/'); if (typeof Buffer !== 'undefined' && !Buffer.prototype.hasOwnProperty) Buffer.prototype.hasOwnProperty = Object.prototype.hasOwnProperty;\""
 	}
 	buildCmd := fmt.Sprintf("npx esbuild %q %s", cfg.Main, esbuildFlags)
 

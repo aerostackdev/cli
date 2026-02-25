@@ -5,6 +5,16 @@ All notable changes to the Aerostack CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.8] - 2026-02-25
+
+### Added
+- **Node.js Compatibility Bridge**: Introduced `.cjs` mock extension and `createRequire` shim for reliable CommonJS support in Workers.
+- **Global Prototype Fix**: Added automatic `esbuild` banner to patch missing methods (like `hasOwnProperty`) on native Worker modules.
+
+### Changed
+- **Project Templates**: Updated all project templates to use `nodejs_compat_v2` for modern Node.js support.
+- **Build Optimization**: Switched to relative `./` paths for alias resolution, ensuring robust builds across different environments.
+
 ## [1.5.7] - 2026-02-25
 
 ### Fixed

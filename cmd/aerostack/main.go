@@ -60,7 +60,6 @@ Features:
 	rootCmd.AddCommand(commands.NewFunctionsCommand())
 	rootCmd.AddCommand(commands.NewMigrateCommand())
 
-	fmt.Println("DEBUG: About to Execute rootCmd")
 	if err := rootCmd.Execute(); err != nil {
 		// 1. Basic error print
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

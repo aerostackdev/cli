@@ -229,7 +229,88 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 	if mainEntry == "" {
 		mainEntry = "src/index.ts"
 	}
-	buildCmd := fmt.Sprintf("npx --yes esbuild %q --bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared --minify --external:node:* --external:cloudflare:* --platform=node --alias:path=node:path --alias:url=node:url --alias:crypto=node:crypto --alias:events=node:events --alias:util=node:util --alias:stream=node:stream --alias:buffer=node:buffer --alias:os=node:os --alias:fs=node:fs --alias:http=node:http --alias:https=node:https --alias:tty=node:tty --alias:zlib=node:zlib --alias:string_decoder=node:string_decoder --alias:assert=node:assert --alias:dns=node:dns --alias:net=node:net --alias:tls=node:tls --alias:querystring=node:querystring --alias:timers=node:timers --alias:async_hooks=node:async_hooks --alias:console=node:console", mainEntry)
+
+	// Check for nodejs_compat_v2
+	hasNodeCompatV2 := false
+	for _, flag := range cfg.CompatibilityFlags {
+		if flag == "nodejs_compat_v2" {
+			hasNodeCompatV2 = true
+			break
+		}
+	}
+
+	esbuildFlags := "--bundle --outfile=dist/worker.js --format=esm --alias:@shared=./shared --minify --external:node:* --external:cloudflare:*"
+
+	// Create node-mocks for both legacy and nodejs_compat_v2 paths if they load modules like express
+	mockDir := ".aerostack"
+	os.MkdirAll(mockDir, 0755)
+	mockPath := filepath.Join(mockDir, "node-mocks.cjs")
+	// Minimal mock: exports most things as empty objects or dummy functions
+	mockContent := `
+const noop = () => {};
+const emptyObj = {};
+const handler = {
+	get: (target, prop) => {
+		if (prop === 'prototype') return emptyObj;
+		if (prop === 'on' || prop === 'once' || prop === 'emit') return noop;
+		return proxy;
+	},
+	construct: () => proxy,
+	apply: () => proxy
+};
+const proxy = new Proxy(noop, handler);
+
+Object.assign(proxy, { 
+	isatty: () => false,
+	createServer: () => ({ listen: () => ({ on: () => {} }), on: () => {} }),
+	readFileSync: () => { throw new Error("fs.readFileSync is not supported in Workers. Use cache or bindings.") },
+	METHODS: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
+	STATUS_CODES: { 200: "OK", 404: "Not Found", 500: "Internal Server Error" },
+	IncomingMessage: proxy,
+	ServerResponse: proxy,
+	Agent: proxy,
+	Socket: proxy,
+	networkInterfaces: () => ({}),
+	arch: () => "arm64",
+	platform: () => "linux"
+});
+
+module.exports = proxy;
+`
+	os.WriteFile(mockPath, []byte(mockContent), 0644)
+
+	// esbuild requires relative paths to start with ./ or ../ or it treats them as bare modules
+	mockPathForEsbuild := "./" + filepath.ToSlash(filepath.Join(".aerostack", "node-mocks.cjs"))
+
+	// Mock common unsupported modules
+	unsupported := []string{"fs", "os", "http", "https", "net", "dns", "tty", "tls", "child_process"}
+	for _, m := range unsupported {
+		esbuildFlags += fmt.Sprintf(" --alias:%s=%s --alias:node:%s=%s", m, mockPathForEsbuild, m, mockPathForEsbuild)
+	}
+
+	// Add createRequire shim and prototype fixes
+	esbuildFlags += " --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire('/'); if (typeof Buffer !== 'undefined' && !Buffer.prototype.hasOwnProperty) Buffer.prototype.hasOwnProperty = Object.prototype.hasOwnProperty;\""
+
+	if hasNodeCompatV2 {
+		// nodejs_compat handles Node.js built-ins natively.
+		// We avoid --platform=node to prevent dynamic require() issues.
+		nodeModules := []string{"path", "url", "crypto", "events", "util", "stream", "buffer", "string_decoder", "assert", "timers", "async_hooks", "console", "querystring", "zlib", "punycode"}
+		for _, m := range nodeModules {
+			esbuildFlags += fmt.Sprintf(" --alias:%s=node:%s", m, m)
+		}
+	} else {
+		// Legacy / Default
+		esbuildFlags += " --platform=node"
+		nodeModules := []string{"path", "url", "crypto", "events", "util", "stream", "buffer", "string_decoder", "assert", "timers", "async_hooks", "console", "querystring", "zlib", "punycode"}
+		for _, m := range nodeModules {
+			esbuildFlags += fmt.Sprintf(" --alias:%s=node:%s", m, m)
+		}
+	}
+
+	// Add createRequire shim for ESM bundles
+	esbuildFlags += " --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire('/');\""
+
+	buildCmd := fmt.Sprintf("npx --yes esbuild %q %s", mainEntry, esbuildFlags)
 
 	cmd := exec.Command("sh", "-c", buildCmd)
 	cmd.Dir = "."
