@@ -117,6 +117,9 @@ func ParseAerostackToml(path string) (*AerostackConfig, error) {
 	// Parse [vars] block
 	cfg.Vars = parseVars(content)
 
+	// Parse ai flag
+	cfg.AI = extractTomlBool(content, "ai")
+
 	// Defaults
 	if cfg.Main == "" || cfg.Main == "dist/worker.js" {
 		// If main is empty or points to the build output (common in wrangler.toml),
@@ -143,6 +146,15 @@ func extractTomlString(content, key string) string {
 		return m[1]
 	}
 	return ""
+}
+
+func extractTomlBool(content, key string) bool {
+	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(key) + `\s*=\s*(true|false)`)
+	m := re.FindStringSubmatch(content)
+	if len(m) > 1 {
+		return m[1] == "true"
+	}
+	return false
 }
 
 func extractTomlStringList(content, key string) []string {
@@ -782,8 +794,9 @@ func EnsureDefaultQueues(cfg *AerostackConfig) {
 }
 
 // EnsureDefaultAI adds an AI binding if missing
+// Deprecated: We now only add AI if explicitly requested in aerostack.toml
 func EnsureDefaultAI(cfg *AerostackConfig) {
-	cfg.AI = true
+	// disabled to avoid 'not supported' logs locally
 }
 
 // StripLocalStubBindings removes stub bindings that only exist for local development
