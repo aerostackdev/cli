@@ -520,9 +520,8 @@ export default proxy;
 	sb.WriteString("[vars]\n")
 	// Inject AEROSTACK_API_URL if not already set by user
 	if _, ok := cfg.Vars["AEROSTACK_API_URL"]; !ok {
-		// Default to localhost:8787 for internal routing if not provided
-		// During deploy, this will be overridden by the Aerostack API if deploying to Aerostack.
-		sb.WriteString("AEROSTACK_API_URL = \"http://localhost:8787\"\n")
+		// Default to production API to avoid infinite loops with localhost:8787 in dev
+		sb.WriteString("AEROSTACK_API_URL = \"https://api.aerostack.dev\"\n")
 	}
 	for k, v := range cfg.Vars {
 		sb.WriteString(fmt.Sprintf("%s = %q\n", k, v))
@@ -584,7 +583,7 @@ export default proxy;
 		// 5. Vars
 		sb.WriteString(fmt.Sprintf("[env.%s.vars]\n", envName))
 		if _, ok := cfg.Vars["AEROSTACK_API_URL"]; !ok {
-			sb.WriteString("AEROSTACK_API_URL = \"http://localhost:8787\"\n")
+			sb.WriteString("AEROSTACK_API_URL = \"https://api.aerostack.dev\"\n")
 		}
 		for k, v := range cfg.Vars {
 			sb.WriteString(fmt.Sprintf("%s = %q\n", k, v))
@@ -692,10 +691,10 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 	execName := "npx"
 	var args []string
 	if wranglerBin == "wrangler" {
-		args = []string{"-y", "wrangler@latest", "dev", "--local", "--config", absPath, "--port", strconv.Itoa(port)}
+		args = []string{"-y", "wrangler@latest", "dev", "--local", "--config", absPath, "--port", strconv.Itoa(port), "--ip", "127.0.0.1", "--no-update-check"}
 	} else {
 		execName = wranglerBin
-		args = []string{"dev", "--local", "--config", absPath, "--port", strconv.Itoa(port)}
+		args = []string{"dev", "--local", "--config", absPath, "--port", strconv.Itoa(port), "--ip", "127.0.0.1", "--no-update-check"}
 	}
 
 	if remoteEnv != "" {
@@ -710,6 +709,7 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 
 	// Ensure npx finds packages (use project dir)
 	cmd.Env = append(cmd.Env, "NPX_UPDATE_NOTIFIER=false")
+	cmd.Env = append(cmd.Env, "WRANGLER_SEND_METRICS=false")
 	cmd.SysProcAttr = &syscall.SysProcAttr{}
 	setProcessGroup(cmd.SysProcAttr)
 
@@ -723,7 +723,7 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 		}
 	}
 	if !hasApiUrl {
-		cmd.Env = append(cmd.Env, "AEROSTACK_API_URL=http://localhost:8787")
+		cmd.Env = append(cmd.Env, "AEROSTACK_API_URL=https://api.aerostack.dev")
 	}
 
 	// Inject Hyperdrive local connection strings (avoids writing secrets to wrangler.toml)

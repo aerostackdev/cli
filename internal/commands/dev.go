@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -141,35 +142,47 @@ func startDevServer(port int, remote string) error {
 	}
 
 	// 7. Run wrangler dev (single or multi-worker)
-	var cmds []*os.Process
+	var cmds []*exec.Cmd
+	exitChan := make(chan error, len(workerConfigs))
 	for i, wc := range workerConfigs {
 		p := port + i
 		cmd, err := devserver.RunWranglerDev(wc.path, p, remote, hyperdriveEnv)
 		if err != nil {
 			// Kill any already started
 			for _, c := range cmds {
-				if c != nil {
-					devserver.KillProcessGroup(c)
+				if c != nil && c.Process != nil {
+					devserver.KillProcessGroup(c.Process)
 				}
 			}
 			return err
 		}
-		cmds = append(cmds, cmd.Process)
+		cmds = append(cmds, cmd)
 		fmt.Printf("   [%s] http://localhost:%d\n", wc.name, p)
+
+		// Monitor process exit
+		go func(c *exec.Cmd, name string) {
+			err := c.Wait()
+			exitChan <- fmt.Errorf("worker [%s] exited: %v", name, err)
+		}(cmd, wc.name)
 	}
 
 	fmt.Println("\n✅ Dev server ready!")
 	fmt.Println("   Press Ctrl+C to stop")
 
-	// Wait for interrupt signal to gracefully shut down
+	// Wait for interrupt signal OR process exit
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	s := <-sigChan
 
-	fmt.Printf("\n👋 Received %v. Shutting down dev server...\n", s)
-	for _, p := range cmds {
-		if p != nil {
-			devserver.KillProcessGroup(p)
+	select {
+	case s := <-sigChan:
+		fmt.Printf("\n👋 Received %v. Shutting down dev server...\n", s)
+	case err := <-exitChan:
+		fmt.Printf("\n❌ %v\n", err)
+	}
+
+	for _, c := range cmds {
+		if c != nil && c.Process != nil {
+			devserver.KillProcessGroup(c.Process)
 		}
 	}
 	return nil
