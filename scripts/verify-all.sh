@@ -12,6 +12,16 @@ echo "=========================================="
 
 FAILED=0
 
+# ── E2E tests (runs first — most critical, catches dev command failures) ──
+echo ""
+echo "[E2E] Running end-to-end tests (build → init → dev → connectivity)..."
+if ./scripts/e2e-test.sh; then
+  echo "✓ E2E tests passed"
+else
+  echo "✗ E2E tests FAILED — aerostack dev is broken"
+  FAILED=1
+fi
+
 # Phase 2: D1, migrations, generate types (always run)
 if [ -f "./scripts/phase2-test.sh" ]; then
   echo ""
@@ -69,9 +79,9 @@ fi
 echo ""
 echo "=========================================="
 if [ $FAILED -eq 0 ]; then
-  echo "  All verifications passed"
+  echo "  ✅ All verifications passed"
 else
-  echo "  Some verifications failed"
+  echo "  ❌ Some verifications FAILED — DO NOT RELEASE"
   exit 1
 fi
 echo "=========================================="
