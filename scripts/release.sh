@@ -11,9 +11,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DRY_RUN=0
-if [[ "${1:-}" == "--dry-run" ]]; then
-  DRY_RUN=1
-fi
+FAST_MODE=0
+for arg in "$@"; do
+  if [[ "$arg" == "--dry-run" ]]; then DRY_RUN=1; fi
+  if [[ "$arg" == "--fast" ]]; then FAST_MODE=1; fi
+done
 
 # Colours
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BOLD='\033[1m'; NC='\033[0m'
@@ -44,6 +46,9 @@ echo ""
 info "  Version: $TAG"
 if [ "$DRY_RUN" -eq 1 ]; then
   warn "  DRY RUN — will not tag or push"
+fi
+if [ "$FAST_MODE" -eq 1 ]; then
+  warn "  FAST MODE — skipping local tests (relying on CI gates)"
 fi
 echo ""
 
@@ -87,44 +92,38 @@ else
 fi
 
 # ──────────────────────────────────────────
-# Gate 3: Unit tests
+# Gate 3/4/5: Tests (Skipped in FAST_MODE)
 # ──────────────────────────────────────────
-echo ""
-info "[Gate 3/5] Running Go unit tests..."
-if go test ./... 2>&1; then
-  pass "All unit tests passed"
+if [ "$FAST_MODE" -eq 1 ]; then
+  info "Skipping Gates 3-5 (Fast Mode)..."
+  pass "Tests bypassed (CI will enforce rules on push)"
 else
-  fail "Unit tests failed — cannot release"
-  exit 1
-fi
-
-# ──────────────────────────────────────────
-# Gate 4: Phase verification suite
-# ──────────────────────────────────────────
-echo ""
-info "[Gate 4/5] Running phase verification suite..."
-if ./scripts/verify-all.sh 2>&1; then
-  pass "Phase verification suite passed"
-else
-  fail "Phase verification suite failed — cannot release"
-  exit 1
-fi
-
-# ──────────────────────────────────────────
-# Gate 5: E2E tests (most critical)
-# ──────────────────────────────────────────
-echo ""
-info "[Gate 5/5] Running E2E tests (build → init → dev → connectivity)..."
-if ./scripts/e2e-test.sh 2>&1; then
-  pass "E2E tests passed — dev command works end-to-end"
-else
-  fail "E2E tests failed — aerostack dev is broken, DO NOT RELEASE"
   echo ""
-  echo "  ┌───────────────────────────────────────────┐"
-  echo "  │  🚫 RELEASE BLOCKED by E2E test failure   │"
-  echo "  │  Fix the issue and re-run release.sh      │"
-  echo "  └───────────────────────────────────────────┘"
-  exit 1
+  info "[Gate 3/5] Running Go unit tests..."
+  if go test ./... 2>&1; then
+    pass "All unit tests passed"
+  else
+    fail "Unit tests failed — cannot release"
+    exit 1
+  fi
+
+  echo ""
+  info "[Gate 4/5] Running phase verification suite..."
+  if ./scripts/verify-all.sh 2>&1; then
+    pass "Phase verification suite passed"
+  else
+    fail "Phase verification suite failed — cannot release"
+    exit 1
+  fi
+
+  echo ""
+  info "[Gate 5/5] Running E2E tests (build → init → dev → connectivity)..."
+  if ./scripts/e2e-test.sh 2>&1; then
+    pass "E2E tests passed — dev command works end-to-end"
+  else
+    fail "E2E tests failed — aerostack dev is broken, DO NOT RELEASE"
+    exit 1
+  fi
 fi
 
 # ──────────────────────────────────────────
