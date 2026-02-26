@@ -132,24 +132,23 @@ func applyMigrations(remote string) error {
 		return fmt.Errorf("failed to get project root: %w", err)
 	}
 
-	// 2. Ensure D1 databases and wrangler.toml exist
+	// 2. Ensure D1 databases, but ONLY if no Postgres is configured
+	// (EnsureDefaultD1 now handles this correctly internally)
 	devserver.EnsureDefaultD1(cfg)
-	if len(cfg.D1Databases) == 0 {
-		return fmt.Errorf("no D1 databases configured in aerostack.toml")
-	}
 
-	wranglerPath := filepath.Join(projectRoot, "wrangler.toml")
-	if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
-		return fmt.Errorf("failed to generate wrangler.toml: %w", err)
-	}
-
-	// 3. Apply D1 migrations (if migrations/ exists)
+	// 3. Apply D1 migrations (if migrations/ exists and D1 is configured)
 	useRemote := remote != ""
 	hasD1Migrations := false
 	if _, err := os.Stat("migrations"); err == nil {
 		hasD1Migrations = true
 	}
-	if hasD1Migrations {
+	hasMigrated := false
+	if hasD1Migrations && len(cfg.D1Databases) > 0 {
+		// Need wrangler.toml for D1 migrations
+		wranglerPath := filepath.Join(projectRoot, "wrangler.toml")
+		if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
+			return fmt.Errorf("failed to generate wrangler.toml: %w", err)
+		}
 		for _, db := range cfg.D1Databases {
 			fmt.Printf("📦 Applying migrations to D1 %s (%s)...\n", db.Binding, db.DatabaseName)
 			args := []string{"-y", "wrangler@latest", "d1", "migrations", "apply", db.DatabaseName}
@@ -165,33 +164,58 @@ func applyMigrations(remote string) error {
 			if err := cmd.Run(); err != nil {
 				return fmt.Errorf("D1 migrations failed for %s: %w", db.DatabaseName, err)
 			}
+			hasMigrated = true
 		}
 	}
 
-	// 4. Apply Postgres migrations (migrations_postgres/*.sql) — local only for now
-	if remote == "" && len(cfg.PostgresDatabases) > 0 {
+	// 4. Apply Postgres migrations (migrations_postgres/*.sql)
+	// For remote: look for DATABASE_URL or per-binding env var as connection string override
+	hasPostgresMigrations := false
+	if _, err := os.Stat("migrations_postgres"); err == nil {
+		hasPostgresMigrations = true
+	}
+	if hasPostgresMigrations && len(cfg.PostgresDatabases) > 0 {
 		for _, pg := range cfg.PostgresDatabases {
-			if strings.Contains(pg.ConnectionString, "$") {
-				fmt.Printf("⚠️  Skipping Postgres %s: connection string has unresolved env vars\n", pg.Binding)
+			connStr := pg.ConnectionString
+
+			// For remote migrations, allow overriding connection string from env
+			if useRemote {
+				// Try env var override: e.g. PRODUCTION_PG_CONN or DATABASE_URL
+				envVarName := strings.ToUpper(pg.Binding) + "_CONN"
+				if override := os.Getenv(envVarName); override != "" {
+					connStr = override
+				} else if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+					connStr = dbURL
+				}
+			}
+
+			if strings.Contains(connStr, "$") {
+				fmt.Printf("⚠️  Skipping Postgres %s: connection string has unresolved env vars. Set DATABASE_URL or %s_CONN in your environment.\n", pg.Binding, strings.ToUpper(pg.Binding))
 				continue
 			}
-			fmt.Printf("📦 Applying Postgres migrations to %s...\n", pg.Binding)
-			n, err := devserver.ApplyPostgresMigrations(pg.ConnectionString, pg.Binding)
+			fmt.Printf("📦 Applying Postgres migrations to %s (%s env)...\n", pg.Binding, env)
+			n, err := devserver.ApplyPostgresMigrations(connStr, pg.Binding)
 			if err != nil {
 				return fmt.Errorf("Postgres migrations failed for %s: %w", pg.Binding, err)
 			}
 			if n > 0 {
 				fmt.Printf("   ✓ Applied %d migration(s)\n", n)
+			} else {
+				fmt.Printf("   ✓ No new migrations to apply\n")
 			}
+			hasMigrated = true
 		}
 	}
 
 	// 5. Summary
-	hasPostgresMigrations := remote == "" && len(cfg.PostgresDatabases) > 0
-	if !hasD1Migrations && !hasPostgresMigrations {
-		fmt.Println("No migrations directory found. Run 'aerostack db migrate new <name>' for D1 or 'aerostack db migrate new <name> --postgres' for Postgres.")
+	if !hasMigrated && !hasD1Migrations && !hasPostgresMigrations {
+		fmt.Println("No migrations directory found.")
+		fmt.Println("  For D1:       aerostack db migrate new <name>")
+		fmt.Println("  For Postgres: aerostack db migrate new <name> --postgres")
+	} else if !hasMigrated {
+		fmt.Println("No applicable migrations found for the current configuration.")
 	} else {
-		fmt.Printf("✅ Migrations applied\n")
+		fmt.Printf("✅ Migrations applied to %s\n", env)
 	}
 	return nil
 }

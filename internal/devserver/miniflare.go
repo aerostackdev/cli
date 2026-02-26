@@ -726,9 +726,10 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 	return cmd, nil
 }
 
-// EnsureDefaultD1 adds a default D1 binding if none exist (for blank template)
+// EnsureDefaultD1 adds a default D1 binding if none exist AND no Postgres databases are configured.
+// This prevents Neon/Postgres projects from getting a spurious D1 binding injected.
 func EnsureDefaultD1(cfg *AerostackConfig) {
-	if len(cfg.D1Databases) == 0 {
+	if len(cfg.D1Databases) == 0 && len(cfg.PostgresDatabases) == 0 {
 		cfg.D1Databases = []D1Database{
 			{Binding: "DB", DatabaseName: "local-db", DatabaseID: "aerostack-local"},
 		}
