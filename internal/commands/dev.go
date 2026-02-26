@@ -69,6 +69,12 @@ func startDevServer(port int, remote string) error {
 	}
 	fmt.Printf("✓ Node.js %s\n", nodeVersion)
 
+	// 2b. Pre-flight: make sure the target port is free.
+	// Wrangler hangs silently if the port is occupied — fail fast instead.
+	if err := devserver.CheckPortAvailable(port); err != nil {
+		return fmt.Errorf("cannot start dev server: %w", err)
+	}
+
 	// 3. Parse config and generate wrangler.toml
 	cfg, err := devserver.ParseAerostackToml(configPath)
 	if err != nil {

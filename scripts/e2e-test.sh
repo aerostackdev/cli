@@ -30,10 +30,18 @@ warn() { echo -e "${YELLOW}⚠${NC}  $1"; }
 # Cleanup on exit
 # ──────────────────────────────────────────
 cleanup() {
+  # Kill the direct dev PID
   if [ -n "$DEV_PID" ] && kill -0 "$DEV_PID" 2>/dev/null; then
-    kill "$DEV_PID" 2>/dev/null || true
+    # Kill the whole process group to ensure wrangler + workerd children are cleaned up
+    PGID=$(ps -o pgid= -p "$DEV_PID" 2>/dev/null | tr -d ' ')
+    if [ -n "$PGID" ] && [ "$PGID" != "$$" ]; then
+      kill -9 -- "-$PGID" 2>/dev/null || true
+    fi
+    kill -9 "$DEV_PID" 2>/dev/null || true
     wait "$DEV_PID" 2>/dev/null || true
   fi
+  # Also kill anything still on port 8787 (workerd survivor)
+  lsof -ti :8787 | xargs -r kill -9 2>/dev/null || true
   if [ -n "$TEST_DIR" ] && [ -d "$TEST_DIR" ]; then
     rm -rf "$TEST_DIR"
   fi
@@ -118,6 +126,13 @@ if [ -d "$TEST_DIR/e2e-project" ] && [ -f "$TEST_DIR/e2e-project/aerostack.toml"
 else
   # Fallback: use the built-in test project that ships with the repo
   cd "$CLI_PKG_DIR/my-blank-app"
+fi
+
+# Pre-check: ensure port 8787 is free before launching (avoid silent hang)
+if lsof -ti :8787 &>/dev/null; then
+  warn "Port 8787 is in use — killing old process before starting E2E test"
+  lsof -ti :8787 | xargs kill -9 2>/dev/null || true
+  sleep 1
 fi
 
 DEV_LOG=$(mktemp /tmp/aerostack-e2e-dev-XXXX.log)
