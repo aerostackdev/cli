@@ -48,31 +48,33 @@ func ProvisionCloudflareResources(cfg *devserver.AerostackConfig, env string, pr
 	}
 
 	modified := false
-	for i := range dbs {
-		db := &dbs[i]
-		if !isPlaceholderID(db.DatabaseID) {
-			continue
-		}
+	if len(dbs) > 0 {
+		for i := range dbs {
+			db := &dbs[i]
+			if !isPlaceholderID(db.DatabaseID) {
+				continue
+			}
 
-		fmt.Printf("   D1 (%s): creating %q in your account...\n", db.Binding, db.DatabaseName)
-		id, err := createD1(db.DatabaseName, projectRoot)
-		if err != nil {
-			return fmt.Errorf("D1 create failed for %s: %w", db.DatabaseName, err)
-		}
+			fmt.Printf("   D1 (%s): creating %q in your account...\n", db.Binding, db.DatabaseName)
+			id, err := createD1(db.DatabaseName, projectRoot)
+			if err != nil {
+				return fmt.Errorf("D1 create failed for %s: %w", db.DatabaseName, err)
+			}
 
-		oldID := db.DatabaseID
-		if oldID == "" {
-			oldID = "local-mock"
-		}
-		db.DatabaseID = id
-		fmt.Printf("   ✓ Created D1 %q → %s\n", db.DatabaseName, id)
+			oldID := db.DatabaseID
+			if oldID == "" {
+				oldID = "local-mock"
+			}
+			db.DatabaseID = id
+			fmt.Printf("   ✓ Created D1 %q → %s\n", db.DatabaseName, id)
 
-		// Update aerostack.toml (db.DatabaseID already updated in-memory)
-		configPath := filepath.Join(projectRoot, "aerostack.toml")
-		if err := updateConfigDatabaseID(configPath, oldID, id, env, db.DatabaseName); err != nil {
-			fmt.Printf("   ⚠ Could not update aerostack.toml: %v (ID saved for this run)\n", err)
-		} else {
-			modified = true
+			// Update aerostack.toml (db.DatabaseID already updated in-memory)
+			configPath := filepath.Join(projectRoot, "aerostack.toml")
+			if err := updateConfigDatabaseID(configPath, oldID, id, env, db.DatabaseName); err != nil {
+				fmt.Printf("   ⚠ Could not update aerostack.toml: %v (ID saved for this run)\n", err)
+			} else {
+				modified = true
+			}
 		}
 	}
 
