@@ -60,13 +60,15 @@ export async function initCommand(args: string[]) {
         initial: true,
     });
 
-    const resolvedDir = resolve(process.cwd(), targetDir === '.' ? '.' : projectName);
+    // Always create a named sub-folder — never install into the current directory
+    const folderName = projectName.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+    const resolvedDir = resolve(process.cwd(), folderName);
 
-    if (existsSync(resolvedDir) && targetDir !== '.') {
+    if (existsSync(resolvedDir)) {
         const { overwrite } = await prompts({
             type: 'confirm',
             name: 'overwrite',
-            message: `Directory "${projectName}" already exists. Continue?`,
+            message: `Directory "${folderName}" already exists. Continue?`,
             initial: false,
         });
         if (!overwrite) {
@@ -119,12 +121,10 @@ ${chalk.green('  ✓ Project created successfully!')}
 
 ${chalk.bold('  Next steps:')}
 
-  ${chalk.gray('1.')} ${chalk.cyan(`cd ${targetDir === '.' ? '.' : projectName}`)}
-  ${chalk.gray('2.')} Set up Cloudflare D1: ${chalk.cyan('npx wrangler d1 create my-db')}
-  ${chalk.gray('3.')} Update ${chalk.bold('wrangler.toml')} with your database ID
-  ${chalk.gray('4.')} Push schema: ${chalk.cyan('npx drizzle-kit push')}
-  ${chalk.gray('5.')} Start dev: ${chalk.cyan('npx wrangler dev')}
-  ${chalk.gray('6.')} Add functions: ${chalk.cyan('npx aerostack add <function-name>')}
+  ${chalk.gray('1.')} ${chalk.cyan(`cd ${folderName}`)}
+  ${chalk.gray('2.')} ${chalk.cyan('aerostack dev')}        ${chalk.gray('# start local dev server')}
+  ${chalk.gray('3.')} ${chalk.cyan('aerostack deploy')}     ${chalk.gray('# deploy to Cloudflare')}
+  ${chalk.gray('4.')} ${chalk.cyan('aerostack add <fn>')}   ${chalk.gray('# install community functions')}
 
 ${chalk.bold('  Registry:')}  ${chalk.underline('https://hub.aerostack.dev')}
 `);
