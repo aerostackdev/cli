@@ -30,5 +30,6 @@ vendor/
 .env.local
 
 # Generated / local test projects
-my-blank-app/
-my-api-app/
+# Test apps (keep in repo for E2E verification)
+# my-blank-app/
+# my-api-app/

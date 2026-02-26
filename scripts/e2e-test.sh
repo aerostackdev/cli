@@ -85,8 +85,8 @@ TEST_DIR=$(mktemp -d)
 cd "$TEST_DIR"
 
 # Note: init requires a TTY for interactive prompts.
-# When a project name AND template are provided, it should skip the TUI.
-INIT_OUT=$("$CLI_BIN" init e2e-project --template=blank 2>&1 || true)
+# When a project name AND template AND db are provided, it should skip the TUI.
+INIT_OUT=$("$CLI_BIN" init e2e-project --template=blank --db=d1 2>&1 || true)
 INIT_EXIT=$?
 
 if [ -d "$TEST_DIR/e2e-project" ] && [ -f "$TEST_DIR/e2e-project/aerostack.toml" ]; then
