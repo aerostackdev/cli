@@ -222,9 +222,17 @@ func initProject(name, templateName, dbName string) error {
 				// Collect all packages
 				var packages []string
 				for depot := range pkg.Dependencies {
+					if depot == "vitest" {
+						packages = append(packages, depot+"@3")
+						continue
+					}
 					packages = append(packages, depot+"@latest")
 				}
 				for depot := range pkg.DevDependencies {
+					if depot == "vitest" {
+						packages = append(packages, depot+"@3")
+						continue
+					}
 					packages = append(packages, depot+"@latest")
 				}
 
