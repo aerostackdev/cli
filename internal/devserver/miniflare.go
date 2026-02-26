@@ -703,10 +703,10 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 	execName := "npx"
 	var args []string
 	if wranglerBin == "wrangler" {
-		args = []string{"-y", "wrangler@latest", "dev", "--local", "--config", absPath, "--port", strconv.Itoa(port), "--ip", "127.0.0.1"}
+		args = []string{"-y", "wrangler@latest", "dev", "--local", "--config", absPath, "--port", strconv.Itoa(port), "--ip", "127.0.0.1", "--show-interactive-dev-session=false"}
 	} else {
 		execName = wranglerBin
-		args = []string{"dev", "--local", "--config", absPath, "--port", strconv.Itoa(port), "--ip", "127.0.0.1"}
+		args = []string{"dev", "--local", "--config", absPath, "--port", strconv.Itoa(port), "--ip", "127.0.0.1", "--show-interactive-dev-session=false"}
 	}
 
 	if remoteEnv != "" {
@@ -714,9 +714,10 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 	}
 	cmd := exec.Command(execName, args...)
 	cmd.Dir = projectRoot
-	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// Intentionally omitting cmd.Stdin = os.Stdin to prevent SIGTTIN suspension
+	// when Wrangler tries to read interactive keystrokes from a background process group.
 	cmd.Env = os.Environ()
 
 	// Ensure npx finds packages (use project dir)
