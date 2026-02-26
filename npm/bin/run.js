@@ -16,7 +16,15 @@ import { fileURLToPath } from 'url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
-// ─── 1. Hybrid Dispatcher ──────────────────────────────────────────────────────
+// ─── 1. Constants ─────────────────────────────────────────────────────────────
+
+const REPO = "aerostackdev/cli";
+const BINARY = "aerostack";
+// Use HOME or USERPROFILE for global install location
+const HOME = process.env.HOME || process.env.USERPROFILE || tmpdir();
+const INSTALL_DIR = process.env.AEROSTACK_INSTALL_DIR || join(HOME, ".aerostack", "bin");
+
+// ─── 2. Hybrid Dispatcher ──────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -39,13 +47,7 @@ if (command && NODE_COMMANDS.includes(command)) {
   });
 }
 
-// ─── 2. Go Binary Downloader (Legacy) ──────────────────────────────────────────
-
-const REPO = "aerostackdev/cli";
-const BINARY = "aerostack";
-// Use HOME or USERPROFILE for global install location
-const HOME = process.env.HOME || process.env.USERPROFILE || tmpdir();
-const INSTALL_DIR = process.env.AEROSTACK_INSTALL_DIR || join(HOME, ".aerostack", "bin");
+// ─── 3. Go Binary Downloader (Legacy) ──────────────────────────────────────────
 
 function getPlatform() {
   const platform = getOsPlatform();
