@@ -532,8 +532,8 @@ export default proxy;
 	sb.WriteString("[vars]\n")
 	// Inject AEROSTACK_API_URL if not already set by user
 	if _, ok := cfg.Vars["AEROSTACK_API_URL"]; !ok {
-		// Default to production API to avoid infinite loops with localhost:8787 in dev
-		sb.WriteString("AEROSTACK_API_URL = \"https://api.aerostack.dev\"\n")
+		// Default to local API for development. Users can override in aerostack.toml
+		sb.WriteString("AEROSTACK_API_URL = \"http://localhost:8787\"\n")
 	}
 	for k, v := range cfg.Vars {
 		sb.WriteString(fmt.Sprintf("%s = %q\n", k, v))
@@ -735,7 +735,7 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 		}
 	}
 	if !hasApiUrl {
-		cmd.Env = append(cmd.Env, "AEROSTACK_API_URL=https://api.aerostack.dev")
+		cmd.Env = append(cmd.Env, "AEROSTACK_API_URL=http://localhost:8787")
 	}
 
 	// Inject Hyperdrive local connection strings (avoids writing secrets to wrangler.toml)

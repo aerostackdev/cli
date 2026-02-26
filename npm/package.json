@@ -1,6 +1,6 @@
 {
   "name": "@aerostack/cli",
-  "version": "1.5.24",
+  "version": "1.5.25",
   "description": "Aerostack CLI - Zero-config serverless development for Cloudflare",
   "type": "module",
   "files": [
