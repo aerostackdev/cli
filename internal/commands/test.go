@@ -46,7 +46,7 @@ func runTests(coverage bool) error {
 	}
 	devserver.EnsureDefaultD1(cfg)
 
-	wranglerPath := "wrangler.toml"
+	wranglerPath := filepath.Join(".aerostack", "wrangler.toml")
 	if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
 		return fmt.Errorf("failed to generate wrangler config: %w", err)
 	}

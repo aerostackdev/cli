@@ -63,7 +63,8 @@ func NewSecretsSetCommand() *cobra.Command {
 }
 
 func ensureWranglerToml() error {
-	if _, err := os.Stat("wrangler.toml"); err == nil {
+	wranglerPath := filepath.Join(".aerostack", "wrangler.toml")
+	if _, err := os.Stat(wranglerPath); err == nil {
 		return nil
 	}
 	cfg, err := devserver.ParseAerostackToml("aerostack.toml")
@@ -71,7 +72,7 @@ func ensureWranglerToml() error {
 		return fmt.Errorf("failed to parse aerostack.toml: %w", err)
 	}
 	devserver.EnsureDefaultD1(cfg)
-	return devserver.GenerateWranglerToml(cfg, "wrangler.toml")
+	return devserver.GenerateWranglerToml(cfg, wranglerPath)
 }
 
 func runSecretsList(env string) error {
@@ -82,7 +83,8 @@ func runSecretsList(env string) error {
 		return err
 	}
 
-	args := []string{"-y", "wrangler@latest", "secret", "list", "--config", "wrangler.toml"}
+	wranglerPath := filepath.Join(".aerostack", "wrangler.toml")
+	args := []string{"-y", "wrangler@latest", "secret", "list", "--config", wranglerPath}
 	if env != "" {
 		args = append(args, "--env", env)
 	}
@@ -126,7 +128,8 @@ func runSecretsSet(key string, args []string, env string) error {
 		}
 	}
 
-	argsWrangler := []string{"-y", "wrangler@latest", "secret", "put", key, "--config", "wrangler.toml"}
+	wranglerPath := filepath.Join(".aerostack", "wrangler.toml")
+	argsWrangler := []string{"-y", "wrangler@latest", "secret", "put", key, "--config", wranglerPath}
 	if env != "" {
 		argsWrangler = append(argsWrangler, "--env", env)
 	}

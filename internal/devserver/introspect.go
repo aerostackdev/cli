@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -39,7 +40,8 @@ type ColumnSchema struct {
 // sourceBinding: binding name for namespacing (e.g. "DB").
 func IntrospectD1Local(dbName, projectRoot, sourceBinding string) ([]TableSchema, error) {
 	// Use wrangler d1 execute --json to get table list
-	cmd := exec.Command("npx", "wrangler", "d1", "execute", dbName, "--local", "--command", "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'", "--json")
+	wranglerConfig := filepath.Join(".aerostack", "wrangler.toml")
+	cmd := exec.Command("npx", "wrangler", "d1", "execute", dbName, "--local", "--config", wranglerConfig, "--command", "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'", "--json")
 	cmd.Dir = projectRoot
 	out, err := cmd.Output()
 	if err != nil {
@@ -62,7 +64,7 @@ func IntrospectD1Local(dbName, projectRoot, sourceBinding string) ([]TableSchema
 			continue
 		}
 
-		colCmd := exec.Command("npx", "wrangler", "d1", "execute", dbName, "--local", "--command", fmt.Sprintf("PRAGMA table_info(%s)", name), "--json")
+		colCmd := exec.Command("npx", "wrangler", "d1", "execute", dbName, "--local", "--config", wranglerConfig, "--command", fmt.Sprintf("PRAGMA table_info(%s)", name), "--json")
 		colCmd.Dir = projectRoot
 		colOut, err := colCmd.Output()
 		if err != nil {

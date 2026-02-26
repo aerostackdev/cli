@@ -78,7 +78,7 @@ func generateTypes(outputPath string) error {
 	// 3. Ensure wrangler.toml exists for D1 introspection (wrangler needs it)
 	devserver.EnsureDefaultD1(cfg)
 
-	wranglerPath := filepath.Join(projectRoot, "wrangler.toml")
+	wranglerPath := filepath.Join(projectRoot, ".aerostack", "wrangler.toml")
 	if _, err := os.Stat(wranglerPath); os.IsNotExist(err) {
 		if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
 			return fmt.Errorf("failed to generate wrangler.toml for D1 introspection: %w", err)

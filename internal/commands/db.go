@@ -145,7 +145,7 @@ func applyMigrations(remote string) error {
 	hasMigrated := false
 	if hasD1Migrations && len(cfg.D1Databases) > 0 {
 		// Need wrangler.toml for D1 migrations
-		wranglerPath := filepath.Join(projectRoot, "wrangler.toml")
+		wranglerPath := filepath.Join(projectRoot, ".aerostack", "wrangler.toml")
 		if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
 			return fmt.Errorf("failed to generate wrangler.toml: %w", err)
 		}
