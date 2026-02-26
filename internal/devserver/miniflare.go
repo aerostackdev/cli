@@ -725,8 +725,8 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 	cmd.SysProcAttr = &syscall.SysProcAttr{}
 	setProcessGroup(cmd.SysProcAttr)
 
-	// Helper for local testing: if AEROSTACK_API_URL is not set, default to localhost:8787
-	// (This enables the AI proxy during dev if the local API is running)
+	// Helper for local testing: if AEROSTACK_API_URL is not set, default to localhost:<port>
+	// (This enables the AI proxy during dev if the local API is running alongside it)
 	hasApiUrl := false
 	for _, e := range cmd.Env {
 		if strings.HasPrefix(e, "AEROSTACK_API_URL=") {
@@ -735,7 +735,7 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 		}
 	}
 	if !hasApiUrl {
-		cmd.Env = append(cmd.Env, "AEROSTACK_API_URL=http://localhost:8787")
+		cmd.Env = append(cmd.Env, fmt.Sprintf("AEROSTACK_API_URL=http://localhost:%d", port))
 	}
 
 	// Inject Hyperdrive local connection strings (avoids writing secrets to wrangler.toml)
