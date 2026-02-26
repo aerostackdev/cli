@@ -142,7 +142,11 @@ func deployService(service, env string, all bool, ownAccount bool, isPublic bool
 		if err != nil {
 			return fmt.Errorf("failed to re-parse config: %w", err)
 		}
-		wranglerPath := "wrangler.toml"
+		// Keep generated wrangler.toml inside .aerostack/ to avoid cluttering project root
+		if err := os.MkdirAll(".aerostack", 0755); err != nil {
+			return fmt.Errorf("failed to create .aerostack directory: %w", err)
+		}
+		wranglerPath := filepath.Join(".aerostack", "wrangler.toml")
 		if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
 			return fmt.Errorf("failed to generate wrangler.toml: %w", err)
 		}

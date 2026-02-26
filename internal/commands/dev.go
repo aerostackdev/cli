@@ -96,8 +96,9 @@ func startDevServer(port int, remote string) error {
 		return fmt.Errorf("failed to create .aerostack directory: %w", err)
 	}
 
-	// 5. Generate wrangler.toml (and per-service configs for multi-worker)
-	wranglerPath := "wrangler.toml"
+	// 5. Generate wrangler.toml inside .aerostack/ (and per-service configs for multi-worker)
+	// This keeps the project root clean — users only see aerostack.toml
+	wranglerPath := filepath.Join(dotAerostack, "wrangler.toml")
 	if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
 		return fmt.Errorf("failed to generate wrangler config: %w", err)
 	}

@@ -406,8 +406,8 @@ func GenerateWranglerToml(cfg *AerostackConfig, outputPath string) error {
 
 		// Some modules are NOT supported in Workers (like fs, os, http, https, net, dns, tty, tls).
 		// We provide a minimal mock to prevent runtime crashes for legacy dependencies.
-		projectDir := filepath.Dir(outputPath)
-		mockDir := filepath.Join(projectDir, ".aerostack")
+		// mockDir is always .aerostack/ relative to the project root, regardless of outputPath.
+		mockDir := ".aerostack"
 		os.MkdirAll(mockDir, 0755)
 		mockPath := filepath.Join(mockDir, "node-mocks.cjs")
 		// Minimal mock: exports most things as empty objects or dummy functions
@@ -459,7 +459,18 @@ export default proxy;
 	buildCmd := fmt.Sprintf("npx esbuild %q %s", cfg.Main, esbuildFlags)
 
 	sb.WriteString(fmt.Sprintf("name = %q\n", cfg.Name))
-	sb.WriteString("main = \"dist/worker.js\"\n")
+	// Compute 'main' relative to the wrangler.toml location, not the project root.
+	// When wrangler.toml lives in a subdir (e.g. .aerostack/), main must use a relative path back up.
+	wranglerDir := filepath.Dir(outputPath)
+	var mainPath string
+	if wranglerDir == "." || wranglerDir == "" {
+		mainPath = "dist/worker.js"
+	} else {
+		// e.g. .aerostack/ → ../dist/worker.js
+		relBack, _ := filepath.Rel(wranglerDir, ".")
+		mainPath = filepath.ToSlash(filepath.Join(relBack, "dist/worker.js"))
+	}
+	sb.WriteString(fmt.Sprintf("main = %q\n", mainPath))
 	sb.WriteString(fmt.Sprintf("compatibility_date = %q\n", cfg.CompatibilityDate))
 
 	if len(cfg.CompatibilityFlags) > 0 {
