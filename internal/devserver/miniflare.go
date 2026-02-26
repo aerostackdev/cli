@@ -681,10 +681,10 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 	execName := "npx"
 	var args []string
 	if wranglerBin == "wrangler" {
-		args = []string{"-y", "wrangler@latest", "dev", "--config", absPath, "--port", strconv.Itoa(port)}
+		args = []string{"-y", "wrangler@latest", "dev", "--local", "--config", absPath, "--port", strconv.Itoa(port)}
 	} else {
 		execName = wranglerBin
-		args = []string{"dev", "--config", absPath, "--port", strconv.Itoa(port)}
+		args = []string{"dev", "--local", "--config", absPath, "--port", strconv.Itoa(port)}
 	}
 
 	if remoteEnv != "" {
@@ -692,6 +692,7 @@ func RunWranglerDev(wranglerTomlPath string, port int, remoteEnv string, hyperdr
 	}
 	cmd := exec.Command(execName, args...)
 	cmd.Dir = projectRoot
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()

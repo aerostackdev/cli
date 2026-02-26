@@ -23,6 +23,7 @@ func RunWranglerDeploy(wranglerTomlPath string, env string) error {
 
 	cmd := exec.Command("npx", args...)
 	cmd.Dir = projectRoot
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(), "NPX_UPDATE_NOTIFIER=false")
