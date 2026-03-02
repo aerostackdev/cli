@@ -130,8 +130,15 @@ func startDevServer(port int, remote string) error {
 	}
 	fmt.Printf("📄 Generated %s (%s)\n", wranglerPath, dbMsg)
 
-	if _, err := os.Stat(".dev.vars"); err == nil {
-		fmt.Println("🔐 Loading .dev.vars for local secrets")
+	// Wrangler loads .dev.vars from the same dir as wrangler.toml (.aerostack/).
+	// Copy project root .dev.vars to .aerostack/.dev.vars so secrets reach the worker.
+	if rootVars, err := os.Stat(".dev.vars"); err == nil && rootVars.Mode().IsRegular() {
+		destPath := filepath.Join(dotAerostack, ".dev.vars")
+		if rootData, err := os.ReadFile(".dev.vars"); err == nil {
+			if err := os.WriteFile(destPath, rootData, 0600); err == nil {
+				fmt.Println("🔐 Loaded .dev.vars for local secrets")
+			}
+		}
 	}
 
 	if remote != "" {
