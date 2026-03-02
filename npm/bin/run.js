@@ -89,12 +89,13 @@ async function downloadBinary(version, asset) {
 
   const archivePath = join(tmpDir, releaseName);
 
-  console.error(`Downloading Aerostack Go Core v${version}...`);
+  console.error(`\n  First-time setup: downloading Aerostack CLI v${version}...`);
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error(`Download failed: ${url} (${res.status})`);
 
   const buffer = Buffer.from(await res.arrayBuffer());
   writeFileSync(archivePath, buffer);
+  console.error('  Ready. Running command...\n');
 
   const binDir = INSTALL_DIR;
   mkdirSync(binDir, { recursive: true });

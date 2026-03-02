@@ -60,6 +60,12 @@ Features:
 	rootCmd.AddCommand(commands.NewFunctionsCommand())
 	rootCmd.AddCommand(commands.NewMigrateCommand())
 
+	// No args: show welcome screen instead of default help
+	if len(os.Args) == 1 {
+		commands.RenderWelcome(version)
+		os.Exit(0)
+	}
+
 	if err := rootCmd.Execute(); err != nil {
 		// 1. Basic error print
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
