@@ -31,7 +31,7 @@ What Aerostack dev gives you (vs raw npx wrangler dev):
 Requires Node.js 18+.
 
 Example:
-  aerostack dev                    # Start local dev server
+  aerostack dev                    # Start local dev server (default port 8788)
   aerostack dev --port 8787        # Use custom port
   aerostack dev --remote           # Use real Cloudflare bindings`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -39,7 +39,7 @@ Example:
 		},
 	}
 
-	cmd.Flags().IntVarP(&port, "port", "p", 8787, "Port for the dev server")
+	cmd.Flags().IntVarP(&port, "port", "p", 8788, "Port for the dev server (default: 8788)")
 	cmd.Flags().StringVar(&remote, "remote", "", "Connect to remote environment (staging/production)")
 
 	return cmd
