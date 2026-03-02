@@ -532,8 +532,8 @@ export default proxy;
 	sb.WriteString("[vars]\n")
 	// Inject AEROSTACK_API_URL if not already set by user
 	if _, ok := cfg.Vars["AEROSTACK_API_URL"]; !ok {
-		// Default to local API for development. Users can override in aerostack.toml
-		sb.WriteString("AEROSTACK_API_URL = \"http://localhost:8787\"\n")
+		// Default to production API. Override in .dev.vars for local API testing.
+		sb.WriteString("AEROSTACK_API_URL = \"https://api.aerocall.ai\"\n")
 	}
 	for k, v := range cfg.Vars {
 		sb.WriteString(fmt.Sprintf("%s = %q\n", k, v))
@@ -595,7 +595,7 @@ export default proxy;
 		// 5. Vars
 		sb.WriteString(fmt.Sprintf("[env.%s.vars]\n", envName))
 		if _, ok := cfg.Vars["AEROSTACK_API_URL"]; !ok {
-			sb.WriteString("AEROSTACK_API_URL = \"https://api.aerostack.dev\"\n")
+			sb.WriteString("AEROSTACK_API_URL = \"https://api.aerocall.ai\"\n")
 		}
 		for k, v := range cfg.Vars {
 			sb.WriteString(fmt.Sprintf("%s = %q\n", k, v))

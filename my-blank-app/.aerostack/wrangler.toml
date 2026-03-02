@@ -23,7 +23,7 @@ queue = "local-queue"
 binding = "AI"
 
 [vars]
-AEROSTACK_API_URL = "https://api.aerostack.dev"
+AEROSTACK_API_URL = "https://api.aerocall.ai"
 
 # Deploy: aerostack deploy --env staging | production
 [env.staging]
@@ -44,7 +44,7 @@ queue = "local-queue"
 binding = "AI"
 
 [env.staging.vars]
-AEROSTACK_API_URL = "https://api.aerostack.dev"
+AEROSTACK_API_URL = "https://api.aerocall.ai"
 
 [env.production]
 [[env.production.d1_databases]]
@@ -64,5 +64,5 @@ queue = "local-queue"
 binding = "AI"
 
 [env.production.vars]
-AEROSTACK_API_URL = "https://api.aerostack.dev"
+AEROSTACK_API_URL = "https://api.aerocall.ai"
 
