@@ -120,6 +120,10 @@ async function downloadBinary(version, asset) {
 }
 
 async function ensureBinary() {
+  // Developer override: prefer the binary in the root of the Go project if we are running from the monorepo
+  const localRepoBin = resolve(__dirname, "..", "..", BINARY);
+  if (existsSync(localRepoBin)) return localRepoBin;
+
   const binPath = join(INSTALL_DIR, process.platform === "win32" ? `${BINARY}.exe` : BINARY);
   const { arch, asset } = getPlatform();
 
