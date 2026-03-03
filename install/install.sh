@@ -41,7 +41,7 @@ info() {
 }
 
 success() {
-  printf "%s%s%s\n" "$COLOR_SUCCESS" "$1" "$COLOR_RESET"
+  printf "%s%s%s\n" "$COLOR_SUCCESS" "$1" "$COLOR_RESET" >&2
 }
 
 warn() {
