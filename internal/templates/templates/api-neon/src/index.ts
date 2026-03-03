@@ -1,7 +1,15 @@
 import { Hono } from 'hono';
 import { sdk } from '@aerostack/sdk';
 
-const app = new Hono<{ Bindings: any }>();
+export interface Env {
+    PG: any; // Neon Postgres connection
+    CACHE: any; // KVNamespace
+    QUEUE: any; // Queue
+    AEROSTACK_PROJECT_ID: string;
+    AEROSTACK_API_KEY: string;
+}
+
+const app = new Hono<{ Bindings: Env }>();
 
 app.use('*', async (c, next) => {
     sdk.init(c.env);
@@ -9,16 +17,34 @@ app.use('*', async (c, next) => {
 });
 
 app.get('/', (c) => {
-    return c.text('Welcome to your Aerostack API with Neon PostgreSQL! Try /users or /test/ai');
+    return c.text('Welcome to your Aerostack API with Neon PostgreSQL! Try GET /health or /users');
 });
 
-// Postgres Example
+app.get('/health', (c) => c.json({ status: "ok", template: "api-neon" }));
+
+// ┌─────────────────────────────────────────────────────────┐
+// │  CRUD Postgres Example                                   │
+// └─────────────────────────────────────────────────────────┘
 app.get('/users', async (c) => {
     try {
-        const result = await sdk.db.query('SELECT * FROM users');
+        await sdk.db.query('CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name TEXT)');
+        const result = await sdk.db.query('SELECT * FROM users ORDER BY id DESC');
         return c.json(result.results);
     } catch (e: any) {
-        return c.json({ error: e.message }, 500);
+        return c.json({ error: e.message, hint: "Check DATABASE_URL in .dev.vars" }, 500);
+    }
+});
+
+app.post('/users', async (c) => {
+    try {
+        const body: any = await c.req.json();
+        if (!body.name) return c.json({ error: "Missing name" }, 400);
+
+        await sdk.db.query('CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name TEXT)');
+        await sdk.db.query('INSERT INTO users (name) VALUES ($1)', [body.name]);
+        return c.json({ success: true, name: body.name }, 201);
+    } catch (e: any) {
+        return c.json({ error: e.message, hint: "Check DATABASE_URL in .dev.vars" }, 500);
     }
 });
 
@@ -39,13 +65,25 @@ test.get('/ai', async (c) => {
     return c.json({ success: true, aiResponse: text });
 });
 
+// 3. Queue publish
+test.post('/queue', async (c) => {
+    await sdk.queue.enqueue({ type: 'welcome_email', data: { userId: 123 } });
+    return c.json({ success: true, message: 'Job enqueued via Hono!' });
+});
+
 app.route('/test', test);
 
 export default {
     fetch: app.fetch,
-    async queue(batch: any, env: any) {
+    async queue(batch: any, env: Env) {
         sdk.init(env);
-        console.log("Background job processed in Neon template");
-        for (const msg of batch.messages) msg.ack();
+        for (const msg of batch.messages) {
+            const body = msg.body as any;
+            console.log(`Neon template processed background job of type: ${body?.type || 'unknown'}`);
+            if (body?.type === 'welcome_email') {
+                console.log(`Sending welcome email to Neon user ${body.data?.userId}`);
+            }
+            msg.ack();
+        }
     }
 };

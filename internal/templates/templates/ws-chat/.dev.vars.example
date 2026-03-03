@@ -1,4 +1,4 @@
-# Local secrets for `aerostack dev` (blank template)
+# Local secrets for `aerostack dev` (ws-chat template)
 # Copy this file to `.dev.vars` and fill in values.
 # Never commit `.dev.vars` to git.
 
@@ -11,4 +11,3 @@ AEROSTACK_API_KEY=your-api-key
 
 # Optional: override the Aerostack API URL
 # AEROSTACK_API_URL=https://api.aerocall.ai
-

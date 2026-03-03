@@ -1,4 +1,4 @@
-# Local secrets for `aerostack dev` (blank template)
+# Local secrets for `aerostack dev` (ws-voice-agent template)
 # Copy this file to `.dev.vars` and fill in values.
 # Never commit `.dev.vars` to git.
 

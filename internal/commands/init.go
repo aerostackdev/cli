@@ -20,6 +20,7 @@ import (
 func NewInitCommand() *cobra.Command {
 	var template string
 	var db string
+	var runDev bool
 
 	cmd := &cobra.Command{
 		Use:   "init [project-name]",
@@ -27,16 +28,19 @@ func NewInitCommand() *cobra.Command {
 		Long: `Initialize a new Aerostack project with your choice of starter template.
 
 Available templates:
-  • blank      - Minimal Worker (default)
-  • api        - REST API with Hono
-  • api-neon   - REST API with Hono and Neon
-  • multi-func - Multi-function sharing code
-  • cron-neon  - Scheduled task with Neon
-  • webhook-neon - Webhook processor with Neon
-  • multi-func - Multi-function sharing code
+  • blank               - Minimal Worker (default)
+  • api                 - REST API with Hono
+  • api-neon            - REST API with Hono and Neon
+  • multi-func          - Multi-function sharing code
+  • cron-neon           - Scheduled task with Neon
+  • webhook-neon        - Webhook processor with Neon
+  • ws-voice-agent      - WebSocket voice/chat agent
+  • ws-multiplayer-game - WebSocket multiplayer game sample
+  • ws-chat             - WebSocket group chat (extend to 1:1 later)
 
-Example:
-  aerostack init my-app --template=api --db=neon`,
+Examples:
+  aerostack init my-app --template=api --db=neon
+  aerostack init my-app --dev    # init then start dev server (no cd needed)`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var projectName string
@@ -74,9 +78,12 @@ Example:
 						huh.NewOption("Multi-Function", "multi-func"),
 						huh.NewOption("Cron + Neon", "cron-neon"),
 						huh.NewOption("Webhook + Neon", "webhook-neon"),
+						huh.NewOption("WS Voice Agent", "ws-voice-agent"),
+						huh.NewOption("WS Multiplayer Game", "ws-multiplayer-game"),
+						huh.NewOption("WS Chat (group)", "ws-chat"),
 					).
 					Value(&template).
-					WithHeight(10))
+					WithHeight(13))
 			}
 
 			if !cmd.Flags().Changed("db") {
@@ -96,17 +103,18 @@ Example:
 				}
 			}
 
-			return initProject(projectName, template, db)
+			return initProject(projectName, template, db, runDev)
 		},
 	}
 
 	cmd.Flags().StringVarP(&template, "template", "t", "blank", "Starter template to use")
 	cmd.Flags().StringVar(&db, "db", "", "Database to use (d1, neon)")
+	cmd.Flags().BoolVar(&runDev, "dev", false, "After init, run 'aerostack dev' in the new project (no need to cd)")
 
 	return cmd
 }
 
-func initProject(name, templateName, dbName string) error {
+func initProject(name, templateName, dbName string, runDev bool) error {
 	if templateName == "blank" || templateName == "" {
 		templateName = "blank"
 	}
@@ -258,15 +266,31 @@ func initProject(name, templateName, dbName string) error {
 	}
 
 	fmt.Println("\n✅ Project initialized successfully!")
+
+	// Single copy-paste command so user doesn't have to cd then run dev manually
 	if dbName == "neon" {
-		fmt.Printf("\nNext steps for Neon:\n")
-		fmt.Printf("  1. cd %s\n", name)
-		fmt.Printf("  2. aerostack db neon create %s-db --add-to-config\n", name)
-		fmt.Printf("  3. aerostack dev\n")
+		fmt.Printf("\nNext steps (Neon): create DB, then start dev:\n")
+		fmt.Printf("  cd %s && aerostack db neon create %s-db --add-to-config && aerostack dev\n", name, name)
 	} else {
-		fmt.Printf("\nNext steps:\n")
-		fmt.Printf("  1. cd %s\n", name)
-		fmt.Printf("  2. aerostack dev\n")
+		fmt.Printf("\nTo start developing (one command):\n")
+		fmt.Printf("  cd %s && aerostack dev\n", name)
+	}
+
+	if runDev {
+		fmt.Printf("\nStarting dev server in %s...\n", name)
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Printf("⚠️  Could not start dev: %v. Run 'cd %s && aerostack dev' manually.\n", err, name)
+			return nil
+		}
+		devCmd := exec.Command(exe, "dev")
+		devCmd.Dir = name
+		devCmd.Stdin = os.Stdin
+		devCmd.Stdout = os.Stdout
+		devCmd.Stderr = os.Stderr
+		if err := devCmd.Run(); err != nil {
+			return fmt.Errorf("dev server exited: %w", err)
+		}
 	}
 
 	return nil

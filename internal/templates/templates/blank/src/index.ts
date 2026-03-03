@@ -1,9 +1,21 @@
 import { sdk } from '@aerostack/sdk';
 
+export interface Env {
+    DB: any; // D1Database
+    CACHE: any; // KVNamespace
+    QUEUE: any; // Queue
+    AEROSTACK_PROJECT_ID: string;
+    AEROSTACK_API_KEY: string;
+}
+
 export default {
-    async fetch(request: Request, env: any, ctx: any) {
+    async fetch(request: Request, env: Env, ctx: any) {
         sdk.init(env);
         const url = new URL(request.url);
+
+        if (url.pathname === '/') {
+            return Response.json({ status: "ok", template: "blank" });
+        }
 
         // ┌─────────────────────────────────────────────────────────┐
         // │  Aerostack Feature Examples                              │
@@ -32,19 +44,26 @@ export default {
         }
 
         // 4. Queues - Background processing
-        if (url.pathname === '/test/queue' && request.method === 'POST') {
-            await sdk.queue.enqueue({ type: 'welcome_email', data: { userId: 123 } });
-            return Response.json({ success: true, message: 'Job enqueued!' });
+        if (url.pathname === '/test/queue') {
+            if (request.method === 'POST') {
+                await sdk.queue.enqueue({ type: 'welcome_email', data: { userId: 123 } });
+                return Response.json({ success: true, message: 'Job enqueued!' });
+            }
+            return Response.json({ message: "Use POST /test/queue to enqueue a job" });
         }
 
-        return new Response("Welcome to Aerostack! Try /test/db, /test/cache, /test/ai, or POST to /test/queue");
+        return new Response("Not found", { status: 404 });
     },
 
     // Handle background queue tasks
-    async queue(batch: any, env: any) {
+    async queue(batch: any, env: Env) {
         sdk.init(env);
         for (const msg of batch.messages) {
-            console.log("Processing background job:", msg.body);
+            const body = msg.body as any;
+            console.log(`Processing background job of type: ${body?.type || 'unknown'}`);
+            if (body?.type === 'welcome_email') {
+                console.log(`Sending welcome email to user ${body.data?.userId}`);
+            }
             msg.ack();
         }
     }

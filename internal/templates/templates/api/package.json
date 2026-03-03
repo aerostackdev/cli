@@ -3,11 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "aerostack dev",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@aerostack/sdk": "^0.2.0",
+    "@aerostack/sdk": "^0.7.0",
     "hono": "^4.0.0"
   },
   "devDependencies": {
