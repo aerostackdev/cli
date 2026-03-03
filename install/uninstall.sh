@@ -27,15 +27,15 @@ else
 fi
 
 brand() {
-  printf "%s%s%s\n" "$COLOR_BRAND" "$1" "$COLOR_RESET"
+  printf "%s%s%s\n" "$COLOR_BRAND" "$1" "$COLOR_RESET" >&2
 }
 
 info() {
-  printf "%s%s%s\n" "$COLOR_INFO" "$1" "$COLOR_RESET"
+  printf "%s%s%s\n" "$COLOR_INFO" "$1" "$COLOR_RESET" >&2
 }
 
 success() {
-  printf "%s%s%s\n" "$COLOR_SUCCESS" "$1" "$COLOR_RESET"
+  printf "%s%s%s\n" "$COLOR_SUCCESS" "$1" "$COLOR_RESET" >&2
 }
 
 warn() {
