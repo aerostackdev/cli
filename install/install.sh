@@ -90,15 +90,6 @@ get_latest_version() {
   TAG_LINE=$(printf '%s\n' "$RESPONSE" | grep '"tag_name":' | head -n 1 || true)
   VERSION=$(printf '%s\n' "$TAG_LINE" | sed -E 's/.*"v\{0,1\}\([^"]*\)".*/\1/' 2>/dev/null || true)
 
-  # region agent log
-  LOG_PATH="/Users/paiteq/projects/aerostack/.cursor/debug-f80ce1.log"
-  HAS_TAG=false
-  HAS_VERSION=false
-  [ -n "$TAG_LINE" ] && HAS_TAG=true
-  [ -n "$VERSION" ] && HAS_VERSION=true
-  TS=$(date +%s)
-  printf '{"sessionId":"f80ce1","runId":"pre-fix","hypothesisId":"H1","location":"install/install.sh:get_latest_version","message":"github_release_parsed","data":{"hasTag":%s,"hasVersion":%s},"timestamp":%s}\n' "$HAS_TAG" "$HAS_VERSION" "$TS" >> "$LOG_PATH" 2>/dev/null || true
-  # endregion agent log
 
   if [ -z "$VERSION" ]; then
     error "Unable to detect latest version from GitHub releases."
