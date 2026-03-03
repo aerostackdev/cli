@@ -59,6 +59,7 @@ Features:
 	rootCmd.AddCommand(commands.NewUICommand())
 	rootCmd.AddCommand(commands.NewFunctionsCommand())
 	rootCmd.AddCommand(commands.NewMigrateCommand())
+	rootCmd.AddCommand(commands.NewUninstallCommand())
 
 	// No args: show welcome screen instead of default help
 	if len(os.Args) == 1 {
