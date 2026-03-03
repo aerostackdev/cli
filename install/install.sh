@@ -88,7 +88,7 @@ get_latest_version() {
 
   RESPONSE=$(curl -sL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null || true)
   TAG_LINE=$(printf '%s\n' "$RESPONSE" | grep '"tag_name":' | head -n 1 || true)
-  VERSION=$(printf '%s\n' "$TAG_LINE" | sed -E 's/.*"v\{0,1\}\([^"]*\)".*/\1/' 2>/dev/null || true)
+  VERSION=$(printf '%s\n' "$TAG_LINE" | sed -E 's/.*"v?([^"]*)".*/\1/' 2>/dev/null || true)
 
 
   if [ -z "$VERSION" ]; then
