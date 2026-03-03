@@ -17,39 +17,50 @@ is_tty() {
 
 if is_tty; then
   ESC="$(printf '\033')"
-  COLOR_BRAND="${ESC}[95m"   # bright magenta
-  COLOR_INFO="${ESC}[36m"    # cyan
-  COLOR_SUCCESS="${ESC}[92m" # bright green
-  COLOR_WARN="${ESC}[93m"    # yellow
-  COLOR_ERROR="${ESC}[91m"   # red
+  COLOR_BRAND="${ESC}[36m"   # cyan
+  COLOR_SUCCESS="${ESC}[32m" # emerald
+  COLOR_WARN="${ESC}[33m"    # amber
+  COLOR_ERROR="${ESC}[31m"   # coral
+  COLOR_MUTED="${ESC}[90m"   # slate
+  COLOR_BOLD="${ESC}[1m"
   COLOR_RESET="${ESC}[0m"
 else
   COLOR_BRAND=""
-  COLOR_INFO=""
   COLOR_SUCCESS=""
   COLOR_WARN=""
   COLOR_ERROR=""
+  COLOR_MUTED=""
+  COLOR_BOLD=""
   COLOR_RESET=""
 fi
 
-brand() {
-  printf "%s%s%s\n" "$COLOR_BRAND" "$1" "$COLOR_RESET" >&2
+# Design System Printers (stderr to avoid subshell capture)
+header() {
+  echo "" >&2
+  printf "%s──────────────────────────────────────────────────%s\n" "$COLOR_MUTED" "$COLOR_RESET" >&2
+  printf "  %s%s◆%s %sAerostack CLI%s\n" "$COLOR_BOLD" "$COLOR_BRAND" "$COLOR_RESET" "$COLOR_BOLD" "$COLOR_RESET" >&2
+  printf "%s──────────────────────────────────────────────────%s\n" "$COLOR_MUTED" "$COLOR_RESET" >&2
+  echo "" >&2
 }
 
 info() {
-  printf "%s%s%s\n" "$COLOR_INFO" "$1" "$COLOR_RESET" >&2
+  printf "  %s%s%s\n" "$COLOR_MUTED" "$1" "$COLOR_RESET" >&2
+}
+
+step() {
+  printf "  %s%s◆%s %s\n" "$COLOR_BOLD" "$COLOR_BRAND" "$COLOR_RESET" "$1" >&2
 }
 
 success() {
-  printf "%s%s%s\n" "$COLOR_SUCCESS" "$1" "$COLOR_RESET" >&2
+  printf "  %s✓%s %s\n" "$COLOR_SUCCESS" "$COLOR_RESET" "$1" >&2
 }
 
 warn() {
-  printf "%s%s%s\n" "$COLOR_WARN" "$1" "$COLOR_RESET" >&2
+  printf "  %s⚠%s %s\n" "$COLOR_WARN" "$COLOR_RESET" "$1" >&2
 }
 
 error() {
-  printf "%s%s%s\n" "$COLOR_ERROR" "$1" "$COLOR_RESET" >&2
+  printf "  %s✗%s %s\n" "$COLOR_ERROR" "$COLOR_RESET" "$1" >&2
 }
 
 # Detect OS and architecture
@@ -78,18 +89,16 @@ detect_platform() {
   esac
 }
 
-# Get latest version from GitHub API
+# Get latest version from GitHub API (silent operation)
 get_latest_version() {
   if [ -n "$VERSION" ]; then
     echo "$VERSION"
     return
   fi
-  info "Detecting latest Aerostack CLI version..."
 
   RESPONSE=$(curl -sL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null || true)
   TAG_LINE=$(printf '%s\n' "$RESPONSE" | grep '"tag_name":' | head -n 1 || true)
   VERSION=$(printf '%s\n' "$TAG_LINE" | sed -E 's/.*"v?([^"]*)".*/\1/' 2>/dev/null || true)
-
 
   if [ -z "$VERSION" ]; then
     error "Unable to detect latest version from GitHub releases."
@@ -103,7 +112,6 @@ get_latest_version() {
 # Download and install
 install() {
   VERSION=$(get_latest_version)
-  # Strip 'v' prefix if present for asset name
   VER="${VERSION#v}"
   
   if [ "$OS" = "windows" ]; then
@@ -124,78 +132,56 @@ install() {
     UPGRADE=" (upgrade)"
   fi
 
-  brand "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  brand "  Aerostack CLI Installer"
-  brand "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  if [ -n "$UPGRADE" ]; then
-    info "Upgrading existing install..."
-  fi
-  info "Version: v${VERSION}"
-  info "Platform: $OS • $ARCH"
-  info "Download:"
-  info "  $DOWNLOAD_URL"
+  header
 
+  step "Version     ${COLOR_MUTED}v${VERSION}${UPGRADE}${COLOR_RESET}"
+  step "Platform    ${COLOR_MUTED}${OS} • ${ARCH}${COLOR_RESET}"
+  
   TMPDIR=$(mktemp -d)
   trap "rm -rf $TMPDIR" EXIT
 
-  if is_tty; then
-    info ""
-    info "Downloading Aerostack CLI binary..."
-  else
-    echo "Downloading Aerostack CLI binary..."
-  fi
+  echo "" >&2
+  step "Downloading..."
+  info "$DOWNLOAD_URL"
 
   CURL_FLAGS="-fL"
   if is_tty; then
-    # Show progress for humans; avoid in non-TTY (e.g. CI logs)
     CURL_FLAGS="$CURL_FLAGS -#"
   else
     CURL_FLAGS="$CURL_FLAGS -s"
   fi
 
   if ! curl $CURL_FLAGS -o "$TMPDIR/$ARCHIVE" "$DOWNLOAD_URL"; then
-    error "Download failed. The release may not exist yet or network is unavailable."
-    error "Check GitHub releases at:"
-    error "  ${RELEASES_URL}"
+    error "Download failed. Check GitHub releases at: ${RELEASES_URL}"
     exit 1
   fi
 
   mkdir -p "$INSTALL_DIR"
 
+  echo "" >&2
+  step "Installing..."
+  
   if [ "$OS" = "windows" ]; then
-    if is_tty; then
-      info ""
-      info "Installing Aerostack CLI..."
-    fi
     unzip -o -q "$TMPDIR/$ARCHIVE" -d "$TMPDIR"
     mv "$TMPDIR/${BINARY}.exe" "$INSTALL_DIR/${BINARY}.exe"
     chmod +x "$INSTALL_DIR/${BINARY}.exe"
-    echo ""
     success "Installed to $INSTALL_DIR/${BINARY}.exe"
-    echo "Add to PATH: $INSTALL_DIR"
   else
-    if is_tty; then
-      info ""
-      info "Installing Aerostack CLI..."
-    fi
     tar -xzf "$TMPDIR/$ARCHIVE" -C "$TMPDIR"
     mv "$TMPDIR/$BINARY" "$INSTALL_DIR/$BINARY"
     chmod +x "$INSTALL_DIR/$BINARY"
-    echo ""
     success "Installed to $INSTALL_DIR/$BINARY"
     add_to_path
   fi
 
-  echo ""
-  brand "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  success "Aerostack CLI installed successfully ✅"
-  brand "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo ""
-  echo "Next steps:"
-  echo "  1) Verify the install:"
-  echo "       aerostack --version"
-  echo "  2) If 'command not found', restart your terminal"
-  echo "     or 'source' your shell config file."
+  echo "" >&2
+  success "${COLOR_BOLD}Aerostack CLI installed successfully!${COLOR_RESET}"
+  echo "" >&2
+  info "Next steps:"
+  info "1) Verify the install by running:"
+  printf "     %s%saerostack --version%s\n" "$COLOR_BOLD" "$COLOR_BRAND" "$COLOR_RESET" >&2
+  info "2) If 'command not found', restart your terminal or source your shell profile."
+  echo "" >&2
 }
 
 add_to_path() {
@@ -212,14 +198,14 @@ add_to_path() {
     SHELL_RC="$HOME/.profile"
     touch "$SHELL_RC"
   fi
+  
   if grep -q ".aerostack/bin" "$SHELL_RC" 2>/dev/null; then
     info "PATH already configured in $SHELL_RC"
   else
     echo "" >> "$SHELL_RC"
     echo "# Aerostack CLI" >> "$SHELL_RC"
     echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> "$SHELL_RC"
-    info "Added Aerostack CLI to PATH in $SHELL_RC"
-    info "Run 'source $SHELL_RC' or restart your terminal to use 'aerostack'."
+    success "Added Aerostack CLI to PATH in $SHELL_RC"
   fi
 }
 
