@@ -11,6 +11,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/aerostackdev/cli/internal/printer"
 	"github.com/aerostackdev/cli/internal/templates"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -125,9 +126,10 @@ func initProject(name, templateName, dbName string, runDev bool) error {
 		dbName = "d1"
 	}
 
-	fmt.Printf("\n🚀 Initializing Aerostack project: %s\n", name)
-	fmt.Printf("📦 Using template: %s\n", templateName)
-	fmt.Printf("🗄️  Using database: %s\n", dbName)
+	printer.Header(fmt.Sprintf("Initializing %s", name))
+	fmt.Println(printer.KeyVal("Template", templateName))
+	fmt.Println(printer.KeyVal("Database", dbName))
+	fmt.Println()
 
 	// 1. Check if template exists in embedded FS
 	templatePath := filepath.Join("templates", templateName)
@@ -201,7 +203,7 @@ func initProject(name, templateName, dbName string, runDev bool) error {
 	// 5. Run npm install if package.json exists
 	packageJSON := filepath.Join(name, "package.json")
 	if _, err := os.Stat(packageJSON); err == nil {
-		fmt.Println("📦 Installing dependencies...")
+		printer.Step("Installing dependencies...")
 		cmd := exec.Command("npm", "install", "--legacy-peer-deps")
 		cmd.Dir = name
 		cmd.Stdout = os.Stdout
@@ -211,7 +213,7 @@ func initProject(name, templateName, dbName string, runDev bool) error {
 		}
 
 		// 6. Update ALL dependencies to their latest versions
-		fmt.Println("🔄 Updating all dependencies to latest versions...")
+		printer.Step("Updating all dependencies to latest versions...")
 
 		// Parse package.json to get list of dependencies
 		type PackageJSON struct {
@@ -221,11 +223,11 @@ func initProject(name, templateName, dbName string, runDev bool) error {
 
 		content, err := os.ReadFile(packageJSON)
 		if err != nil {
-			fmt.Printf("⚠️  Failed to read package.json for update: %v\n", err)
+			printer.Warn("Failed to read package.json for update: %v", err)
 		} else {
 			var pkg PackageJSON
 			if err := json.Unmarshal(content, &pkg); err != nil {
-				fmt.Printf("⚠️  Failed to parse package.json: %v\n", err)
+				printer.Warn("Failed to parse package.json: %v", err)
 			} else {
 				// Collect all packages
 				var packages []string
@@ -254,33 +256,38 @@ func initProject(name, templateName, dbName string, runDev bool) error {
 					cmdUpdate.Stdout = os.Stdout
 					cmdUpdate.Stderr = os.Stderr
 					if err := cmdUpdate.Run(); err != nil {
-						fmt.Printf("⚠️  Failed to update dependencies: %v\n", err)
+						printer.Warn("Failed to update dependencies: %v", err)
 						// Fallback: try updating just the SDK if the bulk update fails?
 						// For now, just warn.
 					} else {
-						fmt.Println("✨ All dependencies updated to latest!")
+						printer.Success("All dependencies updated to latest!")
 					}
 				}
 			}
 		}
 	}
 
-	fmt.Println("\n✅ Project initialized successfully!")
+	fmt.Println()
+	printer.Success("Project initialized successfully")
+	fmt.Println()
 
 	// Single copy-paste command so user doesn't have to cd then run dev manually
 	if dbName == "neon" {
-		fmt.Printf("\nNext steps (Neon): create DB, then start dev:\n")
+		printer.Step("Next steps")
+		printer.Hint("Create your Neon DB and start dev server:")
 		fmt.Printf("  cd %s && aerostack db neon create %s-db --add-to-config && aerostack dev\n", name, name)
 	} else {
-		fmt.Printf("\nTo start developing (one command):\n")
+		printer.Step("Next steps")
+		printer.Hint("Start developing (single command):")
 		fmt.Printf("  cd %s && aerostack dev\n", name)
 	}
+	fmt.Println()
 
 	if runDev {
-		fmt.Printf("\nStarting dev server in %s...\n", name)
+		printer.Step("Starting local development...")
 		exe, err := os.Executable()
 		if err != nil {
-			fmt.Printf("⚠️  Could not start dev: %v. Run 'cd %s && aerostack dev' manually.\n", err, name)
+			printer.Warn("Could not start dev automatically: %v. Please run manually.", err)
 			return nil
 		}
 		devCmd := exec.Command(exe, "dev")

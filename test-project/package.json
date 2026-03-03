@@ -1,0 +1,19 @@
+{
+  "name": "test-project",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "aerostack dev",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@aerostack/sdk": "^0.7.3",
+    "hono": "^4.12.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.12.18",
+    "esbuild": "^0.27.3",
+    "vitest": "^3.2.4"
+  }
+}

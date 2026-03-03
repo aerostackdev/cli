@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/aerostackdev/cli/internal/printer"
+
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
@@ -22,7 +24,7 @@ This will:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			confirm := force
 			if !confirm {
-				fmt.Println("⚠️  This will permanently delete the Aerostack CLI and all its data from your system.")
+				printer.Warn("This will permanently delete the Aerostack CLI and all its data from your system.")
 				form := huh.NewForm(
 					huh.NewGroup(
 						huh.NewConfirm().
@@ -36,7 +38,7 @@ This will:
 			}
 
 			if !confirm {
-				fmt.Println("Uninstall cancelled.")
+				printer.Hint("Uninstall cancelled.")
 				return nil
 			}
 
@@ -47,15 +49,17 @@ This will:
 			}
 			aerostackDir := fmt.Sprintf("%s/.aerostack", home)
 
-			fmt.Printf("🗑️  Removing %s...\n", aerostackDir)
+			printer.Step("Removing %s...", aerostackDir)
 			if err := os.RemoveAll(aerostackDir); err != nil {
 				return fmt.Errorf("failed to remove directory: %w", err)
 			}
 
-			fmt.Println("\n✅ Aerostack CLI has been uninstalled from your home directory.")
-			fmt.Println("\nNext steps (optional):")
-			fmt.Println("  1. Remove the PATH entry from your shell profile (e.g., ~/.zshrc or ~/.bashrc).")
-			fmt.Println("  2. The binary you just ran will remain until you close this terminal or delete it manually.")
+			fmt.Println()
+			printer.Success("Aerostack CLI has been uninstalled from your home directory.")
+			fmt.Println()
+			printer.Step("Next steps (optional):")
+			printer.Hint("1. Remove the PATH entry from your shell profile (e.g., ~/.zshrc or ~/.bashrc).")
+			printer.Hint("2. The binary you just ran will remain until you close this terminal or delete it manually.")
 
 			return nil
 		},

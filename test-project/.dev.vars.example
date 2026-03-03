@@ -1,0 +1,14 @@
+# Local secrets for `aerostack dev` (api template)
+# Copy this file to `.dev.vars` and fill in values.
+# Never commit `.dev.vars` to git.
+
+# Core Aerostack configuration
+# Your Aerostack Project ID (from the Aerostack dashboard)
+AEROSTACK_PROJECT_ID=your-project-id
+
+# Your Aerostack API key or JWT (keep this secret)
+AEROSTACK_API_KEY=your-api-key
+
+# Optional: override the Aerostack API URL
+# AEROSTACK_API_URL=https://api.aerocall.ai
+

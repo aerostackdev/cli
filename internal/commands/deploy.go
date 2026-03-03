@@ -15,6 +15,7 @@ import (
 	"github.com/aerostackdev/cli/internal/link"
 	"github.com/aerostackdev/cli/internal/modules/deploy"
 	"github.com/aerostackdev/cli/internal/pkg"
+	"github.com/aerostackdev/cli/internal/printer"
 	"github.com/aerostackdev/cli/internal/provision"
 	"github.com/spf13/cobra"
 )
@@ -60,10 +61,10 @@ Examples:
 
 			// 1. Pre-flight
 			if err := deployer.PreCheck(cmd.Context()); err != nil {
-				fmt.Printf("⚠️  Pre-flight check skipped: %v\n", err)
+				printer.Warn("Pre-flight check skipped: %v", err)
 			}
 
-			fmt.Println("🚀 Deploying project...")
+			printer.Header("Deploying Project")
 
 			var serviceName string
 			if len(args) > 0 {
@@ -75,7 +76,9 @@ Examples:
 				importStrings := true // just a flag to know we might need strings package
 				_ = importStrings
 
-				fmt.Printf("\nDeployment Failed! Error details:\n%v\n\n", err)
+				fmt.Println()
+				printer.Error("Deployment Failed! Error details:\n%v", err)
+				fmt.Println()
 
 				// 3. Failure Analysis
 				// Skip AI analysis for obvious auth errors
@@ -133,7 +136,7 @@ func deployService(service, env string, all bool, ownAccount bool, isPublic bool
 		if projectRoot == "" {
 			projectRoot = "."
 		}
-		fmt.Println("🔍 Checking resources in aerostack.toml...")
+		printer.Step("Checking resources in aerostack.toml...")
 		if err := provision.ProvisionCloudflareResources(cfg, env, projectRoot); err != nil {
 			return fmt.Errorf("provision resources: %w", err)
 		}
@@ -150,11 +153,13 @@ func deployService(service, env string, all bool, ownAccount bool, isPublic bool
 		if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
 			return fmt.Errorf("failed to generate wrangler.toml: %w", err)
 		}
-		fmt.Printf("\n🚀 Deploying to your Cloudflare account (%s)...\n", env)
+		fmt.Println()
+		printer.Step("Deploying to your Cloudflare account (%s)...", env)
 		if err := devserver.RunWranglerDeploy(wranglerPath, env); err != nil {
 			return err
 		}
-		fmt.Println("\n✅ Deployment successful!")
+		fmt.Println()
+		printer.Success("Deployment successful!")
 		return nil
 	}
 
@@ -170,7 +175,8 @@ func deployService(service, env string, all bool, ownAccount bool, isPublic bool
 
 	// Case A: Project Key (scoped to single project)
 	if validateResp.KeyType == "project" {
-		fmt.Printf("Authenticated as project: %s\n", validateResp.ProjectName)
+		printer.Step("Authenticated")
+		fmt.Println(printer.KeyVal("Project scope", validateResp.ProjectName))
 		// Bypass link check, use project ID from key
 		return deployToAerostack(cfg, env, cred.APIKey, validateResp.ProjectID, service, isPublic, isPrivate)
 	}
@@ -191,26 +197,26 @@ func deployService(service, env string, all bool, ownAccount bool, isPublic bool
 		}
 	}
 
-	fmt.Printf("🔍 Checking project '%s'...\n", projName)
+	printer.Step("Checking project '%s'...", projName)
 	projectMeta, err := api.GetProjectMetadata(cred.APIKey, projName)
 	var projectID string
 
 	if err == nil && projectMeta != nil {
-		fmt.Printf("✅ Found existing project: %s (%s)\n", projectMeta.Name, projectMeta.ProjectID)
+		printer.Success("Found existing project: %s (%s)", projectMeta.Name, projectMeta.ProjectID)
 		projectID = projectMeta.ProjectID
 	} else {
 		// Assume 404/error means not found -> Create
-		fmt.Printf("🆕 Project '%s' not found. Creating...\n", projName)
+		printer.Step("Project '%s' not found. Creating...", projName)
 		createResp, err := api.CreateProject(cred.APIKey, projName)
 		if err != nil {
 			return fmt.Errorf("failed to create project '%s': %w", projName, err)
 		}
-		fmt.Printf("✅ Created project: %s (%s)\n", createResp.Name, createResp.ID)
+		printer.Success("Created project: %s (%s)", createResp.Name, createResp.ID)
 		projectID = createResp.ID
 
 		// Auto-link for future
 		if err := link.Save(projectID); err == nil {
-			fmt.Printf("🔗 Linked local directory to project %s\n", projectID)
+			printer.Hint("Linked local directory to project: %s", projectID)
 		}
 	}
 
@@ -226,7 +232,8 @@ func deployToAerostack(cfg *devserver.AerostackConfig, env string, apiKey string
 		serviceName = "default"
 	}
 
-	fmt.Printf("🚀 Deploying to Aerostack (%s)...\n", env)
+	fmt.Println()
+	printer.Step("Deploying to Aerostack (%s)...", env)
 
 	// Build worker with esbuild
 	mainEntry := cfg.Main
@@ -327,7 +334,7 @@ module.exports = proxy;
 		args = append(args, fmt.Sprintf("--alias:node:%s=%s", m, mockPathForEsbuild))
 	}
 
-	fmt.Printf("📦 Bundling %s...\n", mainEntry)
+	printer.Step("Bundling %s...", mainEntry)
 
 	cmd := exec.Command("npx", args...)
 	cmd.Dir = "."
@@ -413,26 +420,31 @@ module.exports = proxy;
 		return err
 	}
 
-	fmt.Printf("\n✅ Deployed to Aerostack!\n")
-	fmt.Printf("   URL: %s\n", deployResp.PublicURL)
+	fmt.Println()
+	printer.Success("Deployed to Aerostack!")
+	fmt.Println(printer.KeyVal("URL", deployResp.PublicURL))
 
 	if deployResp.Project.Slug != "" {
-		fmt.Printf("   Dashboard: %s\n", deployResp.PublicURL)
+		fmt.Println(printer.KeyVal("Dashboard", deployResp.PublicURL)) // TODO: switch to actual dashboard URL when ready
 	}
 
-	fmt.Printf("\n🔒 Authentication Status:\n")
+	fmt.Println()
+	printer.Step("Authentication Status")
 	if deployResp.IsPublic {
-		fmt.Printf("   Your API is PUBLIC. Anyone can access it without an API key.\n")
-		fmt.Printf("   To make it private, deploy with: aerostack deploy --private\n")
-		fmt.Printf("\n   Test it now:\n")
-		fmt.Printf("   curl %s\n", deployResp.PublicURL)
+		printer.Hint("Your API is PUBLIC. Anyone can access it without an API key.")
+		printer.Hint("To make it private, deploy with: %s", printer.Command("aerostack deploy --private"))
+		fmt.Println()
+		printer.Hint("Test it now:")
+		fmt.Println("  " + printer.Command(fmt.Sprintf("curl %s", deployResp.PublicURL)))
 	} else {
-		fmt.Printf("   Your API is PRIVATE. Requests require your Project API Key.\n")
-		fmt.Printf("   To make it public, deploy with: aerostack deploy --public\n")
-		fmt.Printf("\n   Test it now (using query param):\n")
-		fmt.Printf("   curl \"%s?apiKey=%s\"\n", deployResp.PublicURL, apiKey)
-		fmt.Printf("\n   Test it now (using header):\n")
-		fmt.Printf("   curl -H \"X-API-Key: %s\" %s\n", apiKey, deployResp.PublicURL)
+		printer.Hint("Your API is PRIVATE. Requests require your Project API Key.")
+		printer.Hint("To make it public, deploy with: %s", printer.Command("aerostack deploy --public"))
+		fmt.Println()
+		printer.Hint("Test it now (using query param):")
+		fmt.Println("  " + printer.Command(fmt.Sprintf("curl \"%s?apiKey=%s\"", deployResp.PublicURL, apiKey)))
+		fmt.Println()
+		printer.Hint("Test it now (using header):")
+		fmt.Println("  " + printer.Command(fmt.Sprintf("curl -H \"X-API-Key: %s\" %s", apiKey, deployResp.PublicURL)))
 	}
 
 	return nil
