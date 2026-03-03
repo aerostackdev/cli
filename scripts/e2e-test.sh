@@ -120,12 +120,12 @@ fi
 echo ""
 echo "[4/6] Testing 'aerostack dev' — launching server (CRITICAL)..."
 
-# Use init-created project if available, otherwise use built-in test project
+# Use init-created project
 if [ -d "$TEST_DIR/e2e-project" ] && [ -f "$TEST_DIR/e2e-project/aerostack.toml" ]; then
   cd "$TEST_DIR/e2e-project"
 else
-  # Fallback: use the built-in test project that ships with the repo
-  cd "$CLI_PKG_DIR/my-blank-app"
+  fail "No test project found — init failed and no fallback available"
+  exit 1
 fi
 
 # Pre-check: ensure port 8787 is free before launching (avoid silent hang)
