@@ -28,7 +28,7 @@ const INSTALL_DIR = process.env.AEROSTACK_INSTALL_DIR || join(HOME, ".aerostack"
 
 const args = process.argv.slice(2);
 const command = args[0];
-const NODE_COMMANDS = ['init', 'add', 'publish', 'list', 'login'];
+const NODE_COMMANDS = ['publish', 'list'];
 
 if (command && NODE_COMMANDS.includes(command)) {
   // Dispatch to Node.js implementation
