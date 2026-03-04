@@ -92,8 +92,9 @@ export async function run(args: string[]) {
                 printHelp();
                 process.exit(1);
         }
-    } catch (err: any) {
-        console.error(chalk.red(`\n  Error: ${err.message}\n`));
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(chalk.red(`\n  Error: ${message}\n`));
         process.exit(1);
     }
 }

@@ -82,13 +82,17 @@ func (b *BackendLLM) GenerateContent(ctx context.Context, messages []llms.Messag
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read AI proxy response: %w", err)
+	}
 	if resp.StatusCode != 200 {
 		var errBody struct {
 			Error struct {
 				Message string `json:"message"`
 			} `json:"error"`
 		}
+		// Best-effort: extract structured error message, fall back to raw body
 		_ = json.Unmarshal(body, &errBody)
 		msg := errBody.Error.Message
 		if msg == "" {

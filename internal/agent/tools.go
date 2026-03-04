@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/tmc/langchaingo/llms"
 )
@@ -90,6 +91,29 @@ func (a *Agent) GetTools() []llms.Tool {
 	}
 }
 
+// validatePath ensures the requested path stays within the project root directory.
+// It prevents path traversal attacks (e.g., "../../etc/passwd").
+func validatePath(requestedPath string) (string, error) {
+	projectRoot, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to determine project root: %w", err)
+	}
+
+	// Resolve to absolute path
+	absPath := requestedPath
+	if !filepath.IsAbs(absPath) {
+		absPath = filepath.Join(projectRoot, absPath)
+	}
+	absPath = filepath.Clean(absPath)
+
+	// Ensure the resolved path is within the project root
+	if !strings.HasPrefix(absPath, projectRoot+string(filepath.Separator)) && absPath != projectRoot {
+		return "", fmt.Errorf("access denied: path %q is outside project directory", requestedPath)
+	}
+
+	return absPath, nil
+}
+
 // ExecuteToolCall executes a requested tool call
 func (a *Agent) ExecuteToolCall(ctx context.Context, name string, args string) (string, error) {
 	var params map[string]interface{}
@@ -120,20 +144,30 @@ func (a *Agent) ExecuteToolCall(ctx context.Context, name string, args string) (
 }
 
 func (a *Agent) writeFile(path, content string) (string, error) {
+	safePath, err := validatePath(path)
+	if err != nil {
+		return "", err
+	}
+
 	// Ensure directory exists
-	dir := filepath.Dir(path)
+	dir := filepath.Dir(safePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(safePath, []byte(content), 0644); err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 	return fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), path), nil
 }
 
 func (a *Agent) readFile(path string) (string, error) {
-	content, err := os.ReadFile(path)
+	safePath, err := validatePath(path)
+	if err != nil {
+		return "", err
+	}
+
+	content, err := os.ReadFile(safePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
@@ -148,10 +182,14 @@ func (a *Agent) listDir(path string) (string, error) {
 
 	var result string
 	for _, entry := range entries {
-		info, _ := entry.Info()
 		prefix := "F"
 		if entry.IsDir() {
 			prefix = "D"
+		}
+		info, err := entry.Info()
+		if err != nil {
+			result += fmt.Sprintf("[%s] %s (unknown size)\n", prefix, entry.Name())
+			continue
 		}
 		result += fmt.Sprintf("[%s] %s (%d bytes)\n", prefix, entry.Name(), info.Size())
 	}

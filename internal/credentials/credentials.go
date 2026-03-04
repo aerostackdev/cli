@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
+
+	"github.com/aerostackdev/cli/internal/pkg"
 )
 
 const credentialsDir = ".aerostack"
@@ -76,12 +77,8 @@ func GetAPIKey() string {
 	}
 
 	// Try aerostack.toml in current directory
-	if data, err := os.ReadFile("aerostack.toml"); err == nil {
-		re := regexp.MustCompile(`(?m)^\s*api_key\s*=\s*"([^"]+)"`)
-		matches := re.FindStringSubmatch(string(data))
-		if len(matches) > 1 {
-			return matches[1]
-		}
+	if k := pkg.GetApiKeyFromToml(); k != "" {
+		return k
 	}
 
 	// Fallback to home credentials

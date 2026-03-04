@@ -344,6 +344,9 @@ pool_size = 10
 }
 
 func showManualConfigInstructions(name, envVarName string) {
+	if name == "" {
+		return
+	}
 	binding := strings.ToUpper(name[:1]) + strings.ToLower(name[1:])
 	if len(binding) > 10 {
 		binding = strings.ToUpper(name[:2]) + "DB"

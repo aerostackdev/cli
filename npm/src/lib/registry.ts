@@ -7,6 +7,15 @@ import { getConfig } from './config.js';
 
 export const DEFAULT_REGISTRY = 'https://api.aerostack.dev/api';
 
+/** Parse an error body from a failed API response (best-effort). */
+async function parseErrorBody(res: Response): Promise<{ error?: string }> {
+    try {
+        return (await res.json()) as { error?: string };
+    } catch {
+        return {};
+    }
+}
+
 export interface FunctionManifest {
     id: string;
     name: string;
@@ -26,8 +35,8 @@ export interface FunctionManifest {
     routeExport?: string;
     routePath?: string;
     drizzleSchema?: boolean;
-    aiConfig?: any;
-    monetization?: any;
+    aiConfig?: Record<string, unknown>;
+    monetization?: Record<string, unknown>;
     files: Array<{
         path: string;
         content: string;
@@ -96,8 +105,8 @@ export async function fetchInstallManifest(registry: string, slug: string): Prom
         throw new Error(`Function "${slug}" not found in registry. Run: npx aerostack list`);
     }
     if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as any;
-        throw new Error(body?.error || `Registry error: ${res.status}`);
+        const body = await parseErrorBody(res);
+        throw new Error(body.error || `Registry error: ${res.status}`);
     }
 
     return res.json() as Promise<FunctionManifest>;
@@ -119,7 +128,7 @@ export async function listFunctions(registry: string, opts: {
     const res = await fetch(url, { headers: buildHeaders() });
 
     if (!res.ok) throw new Error(`Registry error: ${res.status}`);
-    const data = await res.json() as any;
+    const data = (await res.json()) as { functions: FunctionListItem[] };
     return data.functions || [];
 }
 
@@ -132,8 +141,8 @@ export async function createFunction(registry: string, payload: {
     tags?: string[];
     readme?: string;
     license?: string;
-    aiConfig?: any;
-    monetization?: any;
+    aiConfig?: Record<string, unknown>;
+    monetization?: Record<string, unknown>;
 }): Promise<{ id: string; slug: string; author: string }> {
     const res = await fetch(`${registry}/community/functions`, {
         method: 'POST',
@@ -142,10 +151,10 @@ export async function createFunction(registry: string, payload: {
     });
 
     if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as any;
-        throw new Error(body?.error || `Failed to create function: ${res.status}`);
+        const body = await parseErrorBody(res);
+        throw new Error(body.error || `Failed to create function: ${res.status}`);
     }
-    return res.json() as any;
+    return res.json() as Promise<{ id: string; slug: string; author: string }>;
 }
 
 export async function updateFunction(registry: string, id: string, payload: Partial<{
@@ -155,8 +164,8 @@ export async function updateFunction(registry: string, id: string, payload: Part
     tags: string[];
     readme: string;
     version: string;
-    aiConfig?: any;
-    monetization?: any;
+    aiConfig?: Record<string, unknown>;
+    monetization?: Record<string, unknown>;
 }>): Promise<void> {
     const res = await fetch(`${registry}/community/functions/${id}`, {
         method: 'PATCH',
@@ -164,8 +173,8 @@ export async function updateFunction(registry: string, id: string, payload: Part
         body: JSON.stringify(payload),
     });
     if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as any;
-        throw new Error(body?.error || `Failed to update function: ${res.status}`);
+        const body = await parseErrorBody(res);
+        throw new Error(body.error || `Failed to update function: ${res.status}`);
     }
 }
 
@@ -175,10 +184,10 @@ export async function publishFunction(registry: string, id: string): Promise<{ u
         headers: buildHeaders(true),
     });
     if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as any;
-        throw new Error(body?.error || `Failed to publish function: ${res.status}`);
+        const body = await parseErrorBody(res);
+        throw new Error(body.error || `Failed to publish function: ${res.status}`);
     }
-    return res.json() as any;
+    return res.json() as Promise<{ url: string }>;
 }
 
 export async function loginToRegistry(registry: string, email: string, password: string): Promise<string> {
@@ -188,9 +197,9 @@ export async function loginToRegistry(registry: string, email: string, password:
         body: JSON.stringify({ email, password }),
     });
     if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as any;
-        throw new Error(body?.error || 'Login failed');
+        const body = await parseErrorBody(res);
+        throw new Error(body.error || 'Login failed');
     }
-    const data = await res.json() as any;
+    const data = (await res.json()) as { token: string };
     return data.token;
 }

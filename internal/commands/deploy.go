@@ -47,7 +47,10 @@ Examples:
   aerostack deploy --cloudflare --env staging`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Initialize Agent for Deploy logic
-			cwd, _ := os.Getwd()
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get working directory: %w", err)
+			}
 			store, err := pkg.NewStore(cwd)
 			if err != nil {
 				return fmt.Errorf("failed to open PKG: %w", err)
@@ -73,9 +76,6 @@ Examples:
 
 			// 2. Actual Deploy Logic
 			if err := deployService(serviceName, environment, allServices, ownAccount, isPublic, isPrivate); err != nil {
-				importStrings := true // just a flag to know we might need strings package
-				_ = importStrings
-
 				fmt.Println()
 				printer.Error("Deployment Failed! Error details:\n%v", err)
 				fmt.Println()
@@ -132,9 +132,9 @@ func deployService(service, env string, all bool, ownAccount bool, isPublic bool
 
 	// Path 1: Deploy to user's own Cloudflare account (--cloudflare)
 	if ownAccount {
-		projectRoot, _ := os.Getwd()
-		if projectRoot == "" {
-			projectRoot = "."
+		projectRoot, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get working directory: %w", err)
 		}
 		printer.Step("Checking resources in aerostack.toml...")
 		if err := provision.ProvisionCloudflareResources(cfg, env, projectRoot); err != nil {

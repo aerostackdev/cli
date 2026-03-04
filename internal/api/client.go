@@ -19,6 +19,37 @@ func getBaseURL() string {
 	return BaseURL()
 }
 
+// readBody reads the full response body and returns it, or an error.
+func readBody(resp *http.Response) ([]byte, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	return body, nil
+}
+
+// parseAPIError attempts to extract an error message from a JSON error response.
+// Falls back to the raw body if JSON parsing fails.
+func parseAPIError(body []byte, statusCode int, context string) error {
+	var errBody struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+			Details string `json:"details"`
+		} `json:"error"`
+	}
+	// Best-effort JSON parsing — if it fails, use raw body
+	_ = json.Unmarshal(body, &errBody)
+	msg := errBody.Error.Message
+	if msg == "" {
+		msg = string(body)
+	}
+	if errBody.Error.Details != "" {
+		msg = fmt.Sprintf("%s - %s", msg, errBody.Error.Details)
+	}
+	return fmt.Errorf("%s (%d): %s", context, statusCode, msg)
+}
+
 // BaseURL returns the Aerostack API base URL (env AEROSTACK_API_URL or default).
 func BaseURL() string {
 	if u := os.Getenv("AEROSTACK_API_URL"); u != "" {
@@ -92,15 +123,12 @@ func Validate(apiKey string) (*ValidateResponse, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != 200 {
-		var errBody ValidateError
-		_ = json.Unmarshal(body, &errBody)
-		msg := errBody.Error.Message
-		if msg == "" {
-			msg = string(body)
-		}
-		return nil, fmt.Errorf("validate failed (%d): %s", resp.StatusCode, msg)
+		return nil, parseAPIError(body, resp.StatusCode, "validate failed")
 	}
 
 	var out ValidateResponse
@@ -126,7 +154,10 @@ func SendTelemetry(apiKey string, payload TelemetryPayload) error {
 	}
 
 	url := getBaseURL() + "/api/v1/cli/telemetry/errors"
-	jsonBody, _ := json.Marshal(payload)
+	jsonBody, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal telemetry payload: %w", err)
+	}
 	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
 		return err
@@ -165,9 +196,12 @@ func GetProjectMetadata(apiKey string, projectSlug string) (*ProjectMetadata, er
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("metadata fetch failed (%d): %s", resp.StatusCode, string(body))
+		return nil, parseAPIError(body, resp.StatusCode, "metadata fetch failed")
 	}
 
 	var out ProjectMetadata
@@ -248,7 +282,10 @@ func Deploy(apiKey string, files map[string]string, env string, projectName stri
 		_ = w.WriteField("compatibility_date", compatDate)
 	}
 	if len(compatFlags) > 0 {
-		flagsJSON, _ := json.Marshal(compatFlags)
+		flagsJSON, err := json.Marshal(compatFlags)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal compatibility flags: %w", err)
+		}
 		_ = w.WriteField("compatibility_flags", string(flagsJSON))
 	}
 
@@ -284,18 +321,12 @@ func Deploy(apiKey string, files map[string]string, env string, projectName stri
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != 200 {
-		var errBody DeployError
-		_ = json.Unmarshal(body, &errBody)
-		msg := errBody.Error.Message
-		if msg == "" {
-			msg = string(body)
-		}
-		if errBody.Error.Details != "" {
-			msg = fmt.Sprintf("%s - %s", msg, errBody.Error.Details)
-		}
-		return nil, fmt.Errorf("deploy failed (%d): %s", resp.StatusCode, msg)
+		return nil, parseAPIError(body, resp.StatusCode, "deploy failed")
 	}
 
 	var out DeployResponse
@@ -315,7 +346,10 @@ func CreateProject(apiKey, name string) (*CreateProjectResponse, error) {
 	url := getBaseURL() + "/api/v1/cli/projects"
 
 	bodyData := map[string]string{"name": name}
-	jsonBody, _ := json.Marshal(bodyData)
+	jsonBody, err := json.Marshal(bodyData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal project data: %w", err)
+	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
@@ -330,19 +364,12 @@ func CreateProject(apiKey, name string) (*CreateProjectResponse, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		var errBody struct {
-			Error struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		_ = json.Unmarshal(body, &errBody)
-		msg := errBody.Error.Message
-		if msg == "" {
-			msg = string(body)
-		}
-		return nil, fmt.Errorf("create project failed (%d): %s", resp.StatusCode, msg)
+		return nil, parseAPIError(body, resp.StatusCode, "create project failed")
 	}
 
 	var out CreateProjectResponse
@@ -356,7 +383,10 @@ func CreateProject(apiKey, name string) (*CreateProjectResponse, error) {
 
 func CommunityPush(apiKey string, fn CommunityFunction) (*CommunityPushResponse, error) {
 	url := getBaseURL() + "/api/community/functions"
-	jsonBody, _ := json.Marshal(fn)
+	jsonBody, err := json.Marshal(fn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal function data: %w", err)
+	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
@@ -371,9 +401,12 @@ func CommunityPush(apiKey string, fn CommunityFunction) (*CommunityPushResponse,
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		return nil, fmt.Errorf("push failed (%d): %s", resp.StatusCode, string(body))
+		return nil, parseAPIError(body, resp.StatusCode, "push failed")
 	}
 
 	var out CommunityPushResponse
@@ -391,9 +424,12 @@ func CommunityPull(username, slug string) (*CommunityFunction, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("pull failed (%d): %s", resp.StatusCode, string(body))
+		return nil, parseAPIError(body, resp.StatusCode, "pull failed")
 	}
 
 	var out struct {
@@ -413,9 +449,12 @@ func CommunityPullNoAuth(slug string) (*CommunityFunction, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := readBody(resp)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("install search failed (%d): %s", resp.StatusCode, string(body))
+		return nil, parseAPIError(body, resp.StatusCode, "install search failed")
 	}
 
 	var out struct {
@@ -442,8 +481,11 @@ func CommunityPublish(apiKey, id string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("publish failed (%d): %s", resp.StatusCode, string(body))
+		body, err := readBody(resp)
+		if err != nil {
+			return err
+		}
+		return parseAPIError(body, resp.StatusCode, "publish failed")
 	}
 	return nil
 }
