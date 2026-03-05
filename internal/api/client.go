@@ -210,6 +210,34 @@ type CommunityFunction struct {
 	URL            string      `json:"url"`
 }
 
+// InstallFile is a single source file in an OFS install manifest.
+type InstallFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+// InstallManifest is the full manifest returned by the registry install endpoint.
+// It carries all files needed to wire a function into a consumer project.
+type InstallManifest struct {
+	Name            string        `json:"name"`
+	Slug            string        `json:"slug"`
+	Description     string        `json:"description"`
+	Author          string        `json:"author"`
+	Version         string        `json:"version"`
+	Category        string        `json:"category"`
+	Language        string        `json:"language"`
+	License         string        `json:"license"`
+	StarCount       int           `json:"starCount"`
+	CloneCount      int           `json:"cloneCount"`
+	Tags            []string      `json:"tags"`
+	NpmDependencies []string      `json:"npmDependencies"`
+	EnvVars         []string      `json:"envVars"`
+	RouteExport     string        `json:"routeExport"`
+	RoutePath       string        `json:"routePath"`
+	DrizzleSchema   bool          `json:"drizzleSchema"`
+	Files           []InstallFile `json:"files"`
+}
+
 type CommunityPushResponse struct {
 	ID     string `json:"id"`
 	Slug   string `json:"slug"`
@@ -446,4 +474,49 @@ func CommunityPublish(apiKey, id string) error {
 		return fmt.Errorf("publish failed (%d): %s", resp.StatusCode, string(body))
 	}
 	return nil
+}
+
+// CommunityGetInstallManifest fetches the full OFS install manifest for username/slug.
+// It calls GET /api/community/functions/:username/:slug/install which returns the
+// multi-file manifest with routeExport, routePath, npmDependencies, etc.
+func CommunityGetInstallManifest(username, slug string) (*InstallManifest, error) {
+	url := fmt.Sprintf("%s/api/community/functions/%s/%s/install", getBaseURL(), username, slug)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("install manifest fetch failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var manifest InstallManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to parse install manifest: %w", err)
+	}
+	return &manifest, nil
+}
+
+// CommunityGetInstallManifestBySlug fetches the full OFS install manifest by slug only
+// (picks the best match). Calls GET /api/community/functions/install/:slug.
+func CommunityGetInstallManifestBySlug(slug string) (*InstallManifest, error) {
+	url := fmt.Sprintf("%s/api/community/functions/install/%s", getBaseURL(), slug)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("install manifest fetch failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var manifest InstallManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to parse install manifest: %w", err)
+	}
+	return &manifest, nil
 }

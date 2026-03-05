@@ -35,9 +35,11 @@ Available templates:
   • multi-func          - Multi-function sharing code
   • cron-neon           - Scheduled task with Neon
   • webhook-neon        - Webhook processor with Neon
-  • ws-voice-agent      - WebSocket voice/chat agent
-  • ws-multiplayer-game - WebSocket multiplayer game sample
-  • ws-chat             - WebSocket group chat (extend to 1:1 later)
+  • ws-voice-agent      - WebSocket voice/chat agent with KV session persistence
+  • ws-multiplayer-game - WebSocket multiplayer game with KV room snapshots
+  • ws-chat             - WebSocket group chat with KV message history
+  • ws-chat-neon        - WebSocket group chat backed by Neon (durable history)
+  • ai-stream           - HTTP SSE streaming AI responses
 
 Examples:
   aerostack init my-app --template=api --db=neon
@@ -79,12 +81,14 @@ Examples:
 						huh.NewOption("Multi-Function", "multi-func"),
 						huh.NewOption("Cron + Neon", "cron-neon"),
 						huh.NewOption("Webhook + Neon", "webhook-neon"),
-						huh.NewOption("WS Voice Agent", "ws-voice-agent"),
+						huh.NewOption("WS Chat (KV history)", "ws-chat"),
+						huh.NewOption("WS Chat + Neon (durable history)", "ws-chat-neon"),
+						huh.NewOption("WS Voice Agent (AI + session memory)", "ws-voice-agent"),
 						huh.NewOption("WS Multiplayer Game", "ws-multiplayer-game"),
-						huh.NewOption("WS Chat (group)", "ws-chat"),
+						huh.NewOption("AI Stream (SSE)", "ai-stream"),
 					).
 					Value(&template).
-					WithHeight(13))
+					WithHeight(15))
 			}
 
 			if !cmd.Flags().Changed("db") {
@@ -149,7 +153,7 @@ func initProject(name, templateName, dbName string, runDev bool) error {
 		IsNeon      bool
 		IsD1        bool
 	}{
-		ProjectName: name,
+		ProjectName: filepath.Base(name),
 		Database:    dbName,
 		IsNeon:      dbName == "neon",
 		IsD1:        dbName == "d1",

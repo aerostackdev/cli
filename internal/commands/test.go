@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/aerostackdev/cli/internal/devserver"
 	"github.com/spf13/cobra"
@@ -45,6 +46,8 @@ func runTests(coverage bool) error {
 		return fmt.Errorf("failed to parse aerostack.toml: %w", err)
 	}
 	devserver.EnsureDefaultD1(cfg)
+	devserver.EnsureDefaultKV(cfg)
+	devserver.EnsureDefaultQueues(cfg)
 
 	wranglerPath := filepath.Join(".aerostack", "wrangler.toml")
 	if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
@@ -61,7 +64,7 @@ func runTests(coverage bool) error {
 	}
 
 	// 4. Run vitest
-	vitestArgs := []string{"vitest", "run"}
+	vitestArgs := []string{"vitest", "run", "--passWithNoTests"}
 	if coverage {
 		vitestArgs = append(vitestArgs, "--coverage")
 	}
@@ -71,6 +74,12 @@ func runTests(coverage bool) error {
 	testCmd.Stdout = os.Stdout
 	testCmd.Stderr = os.Stderr
 	testCmd.Env = append(os.Environ(), "NPX_UPDATE_NOTIFIER=false")
+	for _, pg := range cfg.PostgresDatabases {
+		envVar := "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_" + strings.ToUpper(pg.Binding)
+		if os.Getenv(envVar) == "" {
+			testCmd.Env = append(testCmd.Env, envVar+"=postgres://user:pass@127.0.0.1:1/db")
+		}
+	}
 
 	// Ensure we're in project root
 	absDir, _ := filepath.Abs(".")

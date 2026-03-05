@@ -15,6 +15,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, resolve, basename } from 'path';
 import { createFunction, updateFunction, publishFunction, DEFAULT_REGISTRY } from '../lib/registry.js';
 import { isAuthenticated } from '../lib/config.js';
+import { handleCommandError } from '../lib/error-reporter.js';
 
 interface LocalManifest {
     id?: string;
@@ -250,6 +251,7 @@ export async function publishCommand(args: string[]) {
         }
     } catch (err: any) {
         spinner.fail(err.message);
+        await handleCommandError(err, 'publish');
         process.exit(1);
     }
 }

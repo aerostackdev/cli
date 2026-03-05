@@ -14,6 +14,7 @@ import prompts from 'prompts';
 import ora from 'ora';
 import { loginToRegistry, DEFAULT_REGISTRY } from '../lib/registry.js';
 import { saveConfig, getConfig } from '../lib/config.js';
+import { handleCommandError } from '../lib/error-reporter.js';
 
 export async function loginCommand(args: string[]) {
     const flags: Record<string, string> = {};
@@ -59,6 +60,7 @@ export async function loginCommand(args: string[]) {
         console.log(`  You can now publish functions: ${chalk.cyan('npx aerostack publish')}\n`);
     } catch (err: any) {
         spinner.fail(err.message);
+        await handleCommandError(err, 'login');
         process.exit(1);
     }
 }

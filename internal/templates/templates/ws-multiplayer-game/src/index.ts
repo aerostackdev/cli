@@ -1,6 +1,7 @@
 import { sdk } from '@aerostack/sdk';
 
 export interface Env {
+  CACHE: any;
   AEROSTACK_PROJECT_ID: string;
   AEROSTACK_API_KEY: string;
 }
@@ -31,25 +32,34 @@ const rooms = new Map<string, Set<WebSocket>>();
 const players = new WeakMap<WebSocket, PlayerState>();
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    sdk.init(env);
     const url = new URL(request.url);
 
     if (url.pathname === '/') {
       return new Response(
-        'WebSocket Multiplayer Game is running. Connect via WebSocket to /ws/<roomId>.',
+        'WebSocket Multiplayer Game is running.\n' +
+        'Connect via WebSocket to /ws/<roomId>.\n' +
+        'GET /rooms/<roomId> for current player list (useful before connecting).',
         { status: 200 },
       );
     }
 
-    if (url.pathname.startsWith('/ws/') && request.headers.get('Upgrade') === 'websocket') {
-      sdk.init(env);
+    // HTTP snapshot endpoint — returns current player list from KV
+    // Useful for clients to pre-load state before opening a WebSocket
+    if (url.pathname.startsWith('/rooms/') && request.method === 'GET') {
+      const roomId = url.pathname.split('/')[2] || 'default';
+      const snapshot = await sdk.cache.get<PlayerState[]>(`room_${roomId}`);
+      return Response.json({ roomId, players: snapshot ?? [] });
+    }
 
+    if (url.pathname.startsWith('/ws/') && request.headers.get('Upgrade') === 'websocket') {
       const roomId = url.pathname.split('/')[2] || 'default';
 
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
 
-      handleSession(server, roomId);
+      handleSession(server, roomId, ctx);
 
       return new Response(null, {
         status: 101,
@@ -61,7 +71,7 @@ export default {
   },
 };
 
-function handleSession(ws: WebSocket, roomId: string) {
+function handleSession(ws: WebSocket, roomId: string, ctx: ExecutionContext) {
   ws.accept();
 
   const room = getOrCreateRoom(roomId);
@@ -80,6 +90,7 @@ function handleSession(ws: WebSocket, roomId: string) {
     message: `Player ${player.id.substring(0, 6)} joined room ${roomId} (${room.size} players)`,
   });
   sendState(roomId);
+  persistRoomState(roomId, ctx);
 
   ws.addEventListener('message', (event) => {
     const current = players.get(ws);
@@ -90,19 +101,16 @@ function handleSession(ws: WebSocket, roomId: string) {
       const msg = JSON.parse(raw) as IncomingMessage;
 
       if (msg.type === 'ping') {
-        const response: OutgoingMessage = { type: 'pong' };
-        ws.send(JSON.stringify(response));
+        ws.send(JSON.stringify({ type: 'pong' } as OutgoingMessage));
         return;
       }
 
       if (msg.type === 'join') {
         current.name = msg.name;
-        ws.send(JSON.stringify({ type: 'joined', playerId: current.id, name: current.name, roomId }));
-        broadcast(roomId, {
-          type: 'system',
-          message: `${current.name} entered the room`,
-        });
+        ws.send(JSON.stringify({ type: 'joined', playerId: current.id, name: current.name, roomId } as OutgoingMessage));
+        broadcast(roomId, { type: 'system', message: `${current.name} entered the room` });
         sendState(roomId);
+        persistRoomState(roomId, ctx);
         return;
       }
 
@@ -110,34 +118,20 @@ function handleSession(ws: WebSocket, roomId: string) {
         current.x = msg.x;
         current.y = msg.y;
         sendState(roomId);
+        persistRoomState(roomId, ctx);
         return;
       }
 
       if (msg.type === 'chat') {
-        const chat: OutgoingMessage = {
-          type: 'chat',
-          from: current.id,
-          text: msg.text,
-        };
-        broadcast(roomId, chat);
+        broadcast(roomId, { type: 'chat', from: current.id, text: msg.text } as OutgoingMessage);
         return;
       }
 
-      const unknown: OutgoingMessage = {
-        type: 'error',
-        message: 'Unknown message type',
-      };
-      ws.send(JSON.stringify(unknown));
+      ws.send(JSON.stringify({ type: 'error', message: 'Unknown message type' } as OutgoingMessage));
     } catch (err: any) {
-      const error: OutgoingMessage = {
-        type: 'error',
-        message: err?.message ?? 'Internal error',
-      };
       try {
-        ws.send(JSON.stringify(error));
-      } catch {
-        // ignore
-      }
+        ws.send(JSON.stringify({ type: 'error', message: err?.message ?? 'Internal error' } as OutgoingMessage));
+      } catch { /* ignore */ }
     }
   });
 
@@ -145,9 +139,7 @@ function handleSession(ws: WebSocket, roomId: string) {
     const room = rooms.get(roomId);
     if (room) {
       room.delete(ws);
-      if (room.size === 0) {
-        rooms.delete(roomId);
-      }
+      if (room.size === 0) rooms.delete(roomId);
     }
     const displayName = player.name || `Player ${player.id.substring(0, 6)}`;
     broadcast(roomId, {
@@ -155,14 +147,11 @@ function handleSession(ws: WebSocket, roomId: string) {
       message: `${displayName} left room ${roomId} (${room?.size || 0} players remaining)`,
     });
     sendState(roomId);
+    persistRoomState(roomId, ctx);
   });
 
   ws.addEventListener('error', () => {
-    try {
-      ws.close(1011, 'Unexpected error');
-    } catch {
-      // ignore
-    }
+    try { ws.close(1011, 'Unexpected error'); } catch { /* ignore */ }
   });
 }
 
@@ -182,9 +171,7 @@ function getRoomPlayers(roomId: string): PlayerState[] {
   const result: PlayerState[] = [];
   for (const ws of room) {
     const state = players.get(ws);
-    if (state) {
-      result.push({ ...state });
-    }
+    if (state) result.push({ ...state });
   }
   return result;
 }
@@ -193,18 +180,10 @@ function sendState(roomId: string) {
   const room = rooms.get(roomId);
   if (!room) return;
 
-  const state: OutgoingMessage = {
-    type: 'state',
-    players: getRoomPlayers(roomId),
-  };
-
+  const state: OutgoingMessage = { type: 'state', players: getRoomPlayers(roomId) };
   const payload = JSON.stringify(state);
   for (const ws of room) {
-    try {
-      ws.send(payload);
-    } catch {
-      // ignore failed sends
-    }
+    try { ws.send(payload); } catch { /* ignore */ }
   }
 }
 
@@ -214,11 +193,13 @@ function broadcast(roomId: string, message: OutgoingMessage) {
 
   const payload = JSON.stringify(message);
   for (const ws of room) {
-    try {
-      ws.send(payload);
-    } catch {
-      // ignore failed sends
-    }
+    try { ws.send(payload); } catch { /* ignore */ }
   }
 }
 
+// Persist room snapshot to KV in the background (non-blocking)
+function persistRoomState(roomId: string, ctx: ExecutionContext) {
+  ctx.waitUntil(
+    sdk.cache.set(`room_${roomId}`, getRoomPlayers(roomId)).catch(() => { /* ignore */ })
+  );
+}

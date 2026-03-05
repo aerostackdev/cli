@@ -25,6 +25,7 @@ import { join, resolve } from 'path';
 import { execSync } from 'child_process';
 import { fetchInstallManifest, DEFAULT_REGISTRY, type FunctionManifest } from '../lib/registry.js';
 import { injectRoute, injectSchema } from '../lib/injector.js';
+import { handleCommandError } from '../lib/error-reporter.js';
 
 function parseArgs(args: string[]) {
     const slug = args.find(a => !a.startsWith('--'));
@@ -128,6 +129,7 @@ export async function addCommand(args: string[]) {
         spinner.succeed(`Found: ${chalk.bold(manifest.name)} by ${chalk.cyan(manifest.author)} ${chalk.gray(`v${manifest.version}`)}`);
     } catch (err: any) {
         spinner.fail(err.message);
+        await handleCommandError(err, `add ${slug}`);
         process.exit(1);
     }
 
@@ -177,6 +179,7 @@ export async function addCommand(args: string[]) {
         writeSpinner.succeed(`Files placed in ${chalk.cyan(`src/${moduleType === 'utility' ? 'lib' : 'modules'}/${moduleName}/`)}`);
     } catch (err: any) {
         writeSpinner.fail(`Failed to write files: ${err.message}`);
+        await handleCommandError(err, `add ${slug}`);
         process.exit(1);
     }
 

@@ -16,6 +16,7 @@ import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { applyTokens } from '../lib/injector.js';
+import { handleCommandError } from '../lib/error-reporter.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = resolve(__dirname, '../../templates');
@@ -130,6 +131,7 @@ ${chalk.bold('  Registry:')}  ${chalk.underline('https://hub.aerostack.dev')}
 `);
     } catch (err: any) {
         spinner.fail('Failed to create project');
+        await handleCommandError(err, 'init');
         throw err;
     }
 }

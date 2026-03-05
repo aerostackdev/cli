@@ -44,64 +44,134 @@ func NewFunctionsInstallCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install [username/slug]",
 		Short: "Install a community function into your project",
-		Args:  cobra.ExactArgs(1),
+		Long: `Install an OFS function from the Aerostack registry into src/modules/<slug>/.
+
+Files are copied directly into your project (not added as node_modules).
+For Hono/Cloudflare Workers projects the route is registered automatically.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := args[0]
+			ref := args[0]
 			var username, slug string
 
-			if strings.Contains(path, "/") {
-				parts := strings.Split(path, "/")
+			if strings.Contains(ref, "/") {
+				parts := strings.Split(ref, "/")
 				username = strings.TrimPrefix(parts[0], "@")
 				slug = parts[1]
 			} else {
-				// Search by slug only (picking best match)
-				fmt.Printf("🔍 Searching for function '%s'...\n", path)
-				slug = path
+				fmt.Printf("🔍 Searching for function '%s'...\n", ref)
+				slug = ref
 			}
 
-			// 1. Pull manifest/code from API
-			var fn *api.CommunityFunction
+			// 1. Fetch the full OFS install manifest from the registry
+			var manifest *api.InstallManifest
 			var err error
 			if username != "" {
-				fn, err = api.CommunityPull(username, slug)
+				manifest, err = api.CommunityGetInstallManifest(username, slug)
 			} else {
-				// Use the convenience endpoint (already implemented in API as /install/:slug)
-				// I'll add a new API client method for this.
-				fn, err = api.CommunityPullNoAuth(slug)
+				manifest, err = api.CommunityGetInstallManifestBySlug(slug)
 			}
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf("📥 Installing %s/%s...\n", fn.AuthorUsername, fn.Slug)
+			fmt.Printf("📥 Installing %s/%s v%s...\n", manifest.Author, manifest.Slug, manifest.Version)
 
-			// 2. Create directory in services/
-			serviceDir := filepath.Join("services", fn.Slug)
-			if err := os.MkdirAll(serviceDir, 0755); err != nil {
-				return err
+			// 2. Write each file to src/modules/<slug>/
+			moduleDir := filepath.Join("src", "modules", manifest.Slug)
+			if err := os.MkdirAll(moduleDir, 0755); err != nil {
+				return fmt.Errorf("failed to create module directory: %w", err)
 			}
 
-			// 3. Write source
-			indexPath := filepath.Join(serviceDir, "index.ts")
-			if err := os.WriteFile(indexPath, []byte(fn.Code), 0644); err != nil {
-				return err
+			for _, f := range manifest.Files {
+				destPath := filepath.Join(moduleDir, filepath.FromSlash(f.Path))
+				// Ensure subdirectory exists
+				if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+					return fmt.Errorf("failed to create directory for %s: %w", f.Path, err)
+				}
+				if err := os.WriteFile(destPath, []byte(f.Content), 0644); err != nil {
+					return fmt.Errorf("failed to write %s: %w", f.Path, err)
+				}
+				fmt.Printf("   + %s\n", filepath.Join("src/modules", manifest.Slug, f.Path))
 			}
 
-			// 4. Write README
-			if fn.Readme != "" {
-				readmePath := filepath.Join(serviceDir, "README.md")
-				_ = os.WriteFile(readmePath, []byte(fn.Readme), 0644)
-			}
+			// 3. Write aerostack-manifest.json (install metadata for tooling)
+			manifestJSON, _ := json.MarshalIndent(map[string]interface{}{
+				"name":            manifest.Name,
+				"slug":            manifest.Slug,
+				"version":         manifest.Version,
+				"author":          manifest.Author,
+				"routeExport":     manifest.RouteExport,
+				"routePath":       manifest.RoutePath,
+				"npmDependencies": manifest.NpmDependencies,
+				"envVars":         manifest.EnvVars,
+				"drizzleSchema":   manifest.DrizzleSchema,
+			}, "", "  ")
+			_ = os.WriteFile(filepath.Join(moduleDir, "aerostack-manifest.json"), manifestJSON, 0644)
 
-			// 5. Register in aerostack.toml
-			if err := pkg.AppendServiceToAerostackToml(fn.Slug, indexPath); err != nil {
+			// 4. Register in aerostack.toml
+			indexPath := filepath.Join(moduleDir, "index.ts")
+			if err := pkg.AppendServiceToAerostackToml(manifest.Slug, indexPath); err != nil {
 				fmt.Printf("⚠️  Warning: Failed to register in aerostack.toml: %v\n", err)
 			}
 
-			fmt.Printf("✅ Installed to %s\n", serviceDir)
+			// 5. Patch src/index.ts with import + route registration
+			if err := patchIndexTs(manifest); err != nil {
+				fmt.Printf("⚠️  Could not auto-wire into src/index.ts: %v\n", err)
+				fmt.Printf("   Add manually:\n")
+				fmt.Printf("   import { %s } from './modules/%s';\n", manifest.RouteExport, manifest.Slug)
+				fmt.Printf("   app.route('%s', %s);\n", manifest.RoutePath, manifest.RouteExport)
+			}
+
+			// 6. Print npm install reminder if dependencies are needed
+			if len(manifest.NpmDependencies) > 0 {
+				fmt.Printf("\n📦 Run: npm install %s\n", strings.Join(manifest.NpmDependencies, " "))
+			}
+
+			// 7. Print env var reminder
+			if len(manifest.EnvVars) > 0 {
+				fmt.Printf("🔑 Add to .dev.vars: %s\n", strings.Join(manifest.EnvVars, ", "))
+			}
+
+			// 8. DB schema notice
+			if manifest.DrizzleSchema {
+				fmt.Printf("🗄️  This function includes a DB schema. Run 'aerostack db migrate' to apply it.\n")
+			}
+
+			fmt.Printf("\n✅ Installed %s/%s to %s\n", manifest.Author, manifest.Slug, moduleDir)
 			return nil
 		},
 	}
+}
+
+// patchIndexTs inserts the import and route registration into the consumer's src/index.ts.
+// It looks for // aerostack:imports and // aerostack:routes comment markers.
+func patchIndexTs(manifest *api.InstallManifest) error {
+	indexPath := filepath.Join("src", "index.ts")
+	content, err := os.ReadFile(indexPath)
+	if err != nil {
+		return fmt.Errorf("src/index.ts not found")
+	}
+
+	src := string(content)
+	importLine := fmt.Sprintf("import { %s } from './modules/%s';", manifest.RouteExport, manifest.Slug)
+	routeLine := fmt.Sprintf("app.route('%s', %s);", manifest.RoutePath, manifest.RouteExport)
+
+	// Avoid duplicate inserts
+	if strings.Contains(src, importLine) {
+		return nil
+	}
+
+	importMarker := "// aerostack:imports"
+	routeMarker := "// aerostack:routes"
+
+	if strings.Contains(src, importMarker) {
+		src = strings.Replace(src, importMarker, importMarker+"\n"+importLine, 1)
+	}
+	if strings.Contains(src, routeMarker) {
+		src = strings.Replace(src, routeMarker, routeMarker+"\n"+routeLine, 1)
+	}
+
+	return os.WriteFile(indexPath, []byte(src), 0644)
 }
 
 // NewFunctionsPushCommand creates 'aerostack functions push'

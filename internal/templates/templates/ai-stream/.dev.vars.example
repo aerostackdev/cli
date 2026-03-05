@@ -1,0 +1,6 @@
+# Local secrets for `aerostack dev` (ai-stream template)
+# Copy this file to `.dev.vars` and fill in values.
+# Never commit `.dev.vars` to git.
+
+AEROSTACK_PROJECT_ID=your-project-id
+AEROSTACK_API_KEY=your-api-key

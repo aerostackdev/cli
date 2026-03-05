@@ -45,6 +45,24 @@ Make sure in the Aerostack dashboard that:
 - Neon is correctly wired via `DATABASE_URL` or the `PG` binding.
 - KV and Queue bindings are configured (`CACHE`, `QUEUE`).
 
+### Using a Non-Neon Postgres Database
+
+`sdk.db` works with **any Postgres-compatible database**, not just Neon. Set your connection string in `.dev.vars`:
+
+```
+DATABASE_URL=postgresql://user:pass@your-host:5432/dbname
+```
+
+**Supported**: Neon, Supabase, Railway, Render, Fly.io Postgres, AWS RDS, GCP Cloud SQL, CockroachDB
+**Not supported**: MySQL, MongoDB, Turso, or any non-Postgres wire protocol
+
+> **Production note**: Cloudflare Workers can't open raw TCP connections. For non-Neon databases you need [Cloudflare Hyperdrive](https://developers.cloudflare.com/hyperdrive/) to proxy TCP → HTTP:
+> ```bash
+> wrangler hyperdrive create my-db --connection-string="postgresql://..."
+> # Then update the `id` field under [[hyperdrive]] in .aerostack/wrangler.toml
+> ```
+> For Neon, Hyperdrive is **not required** — Neon's serverless driver uses HTTP natively.
+
 ### More Documentation
 
 - Template overview: `sdks/packages/cli/docs/TEMPLATES_OVERVIEW.md`.

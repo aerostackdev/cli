@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -27,6 +28,7 @@ func NewDeployCommand() *cobra.Command {
 	var ownAccount bool
 	var isPublic bool
 	var isPrivate bool
+	var syncSecrets bool
 
 	cmd := &cobra.Command{
 		Use:   "deploy [service-name]",
@@ -72,7 +74,7 @@ Examples:
 			}
 
 			// 2. Actual Deploy Logic
-			if err := deployService(serviceName, environment, allServices, ownAccount, isPublic, isPrivate); err != nil {
+			if err := deployService(serviceName, environment, allServices, ownAccount, isPublic, isPrivate, syncSecrets); err != nil {
 				importStrings := true // just a flag to know we might need strings package
 				_ = importStrings
 
@@ -98,11 +100,12 @@ Examples:
 	cmd.Flags().BoolVar(&ownAccount, "cloudflare", false, "Deploy to your Cloudflare account (default: Aerostack)")
 	cmd.Flags().BoolVar(&isPublic, "public", false, "Make the deployed service publicly accessible")
 	cmd.Flags().BoolVar(&isPrivate, "private", false, "Make the deployed service private (requires authentication)")
+	cmd.Flags().BoolVar(&syncSecrets, "sync-secrets", false, "Push non-standard .dev.vars keys as secrets to the target environment before deploying")
 
 	return cmd
 }
 
-func deployService(service, env string, all bool, ownAccount bool, isPublic bool, isPrivate bool) error {
+func deployService(service, env string, all bool, ownAccount bool, isPublic bool, isPrivate bool, syncSecrets bool) error {
 	// Validate env
 	if env != "staging" && env != "production" {
 		return fmt.Errorf("invalid env %q: use staging or production", env)
@@ -129,6 +132,13 @@ func deployService(service, env string, all bool, ownAccount bool, isPublic bool
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
 	devserver.EnsureDefaultD1(cfg)
+
+	// Push .dev.vars secrets to the target environment before deploying (--sync-secrets)
+	if syncSecrets {
+		if err := syncSecretsFromDevVars(env); err != nil {
+			printer.Warn("Failed to sync secrets: %v", err)
+		}
+	}
 
 	// Path 1: Deploy to user's own Cloudflare account (--cloudflare)
 	if ownAccount {
@@ -160,6 +170,7 @@ func deployService(service, env string, all bool, ownAccount bool, isPublic bool
 		}
 		fmt.Println()
 		printer.Success("Deployment successful!")
+		printSecretsReminder(cfg, env)
 		return nil
 	}
 
@@ -423,6 +434,7 @@ module.exports = proxy;
 	fmt.Println()
 	printer.Success("Deployed to Aerostack!")
 	fmt.Println(printer.KeyVal("URL", deployResp.PublicURL))
+	printSecretsReminder(cfg, env)
 
 	if deployResp.Project.Slug != "" {
 		fmt.Println(printer.KeyVal("Dashboard", deployResp.PublicURL)) // TODO: switch to actual dashboard URL when ready
@@ -448,4 +460,114 @@ module.exports = proxy;
 	}
 
 	return nil
+}
+
+// standardAerostackKeys are keys managed by the Aerostack platform and should not be
+// auto-pushed as user secrets.
+var standardAerostackKeys = map[string]bool{
+	"AEROSTACK_PROJECT_ID": true,
+	"AEROSTACK_API_KEY":    true,
+	"AEROSTACK_API_URL":    true,
+}
+
+// parseDevVars reads .dev.vars and returns a map of key→value pairs.
+// Lines starting with # are treated as comments. Empty lines are ignored.
+func parseDevVars(path string) (map[string]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	vars := make(map[string]string)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx <= 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:idx])
+		val := strings.TrimSpace(line[idx+1:])
+		// Strip optional surrounding quotes
+		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+			val = val[1 : len(val)-1]
+		}
+		vars[key] = val
+	}
+	return vars, scanner.Err()
+}
+
+// syncSecretsFromDevVars reads .dev.vars, filters out standard Aerostack keys, and pushes
+// the remaining key/value pairs as Cloudflare secrets for the given environment.
+func syncSecretsFromDevVars(env string) error {
+	vars, err := parseDevVars(".dev.vars")
+	if err != nil {
+		if os.IsNotExist(err) {
+			printer.Hint("No .dev.vars file found — skipping secret sync")
+			return nil
+		}
+		return fmt.Errorf("reading .dev.vars: %w", err)
+	}
+
+	pushed := 0
+	for key, val := range vars {
+		if standardAerostackKeys[key] {
+			continue
+		}
+		printer.Step("Pushing secret: %s → %s", key, env)
+		if err := runSecretsSet(key, []string{key, val}, env); err != nil {
+			printer.Warn("Failed to set %s: %v", key, err)
+		} else {
+			pushed++
+		}
+	}
+
+	if pushed == 0 {
+		printer.Hint("No user secrets found in .dev.vars to sync (only standard Aerostack keys were present)")
+	}
+	return nil
+}
+
+// printSecretsReminder prints a post-deploy reminder about secrets that may need to be set.
+// It fires when the project uses Neon (postgres_databases) or when .dev.vars contains
+// non-standard keys that have not been explicitly synced.
+func printSecretsReminder(cfg *devserver.AerostackConfig, env string) {
+	var reminders []string
+
+	if len(cfg.PostgresDatabases) > 0 {
+		reminders = append(reminders,
+			fmt.Sprintf("  DATABASE_URL  →  aerostack secrets set DATABASE_URL \"<neon-url>\" --env %s", env),
+		)
+	}
+
+	// Also check .dev.vars for any other non-standard keys
+	if vars, err := parseDevVars(".dev.vars"); err == nil {
+		for key := range vars {
+			if standardAerostackKeys[key] {
+				continue
+			}
+			// Skip DATABASE_URL if already covered above
+			if key == "DATABASE_URL" && len(cfg.PostgresDatabases) > 0 {
+				continue
+			}
+			reminders = append(reminders,
+				fmt.Sprintf("  %s  →  aerostack secrets set %s \"<value>\" --env %s", key, key, env),
+			)
+		}
+	}
+
+	if len(reminders) == 0 {
+		return
+	}
+
+	fmt.Println()
+	printer.Warn("Production secrets needed — run the following commands (or use --sync-secrets on the next deploy):")
+	for _, r := range reminders {
+		fmt.Println(r)
+	}
+	fmt.Println()
 }

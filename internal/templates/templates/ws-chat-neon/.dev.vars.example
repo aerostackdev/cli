@@ -1,0 +1,10 @@
+# Local secrets for `aerostack dev` (ws-chat-neon template)
+# Copy this file to `.dev.vars` and fill in values.
+# Never commit `.dev.vars` to git.
+
+# Core Aerostack configuration
+AEROSTACK_PROJECT_ID=your-project-id
+AEROSTACK_API_KEY=your-api-key
+
+# Neon connection string used by the `PG` binding
+DATABASE_URL=postgres://user:password@host/dbname

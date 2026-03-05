@@ -22,6 +22,9 @@ const rooms = new Map<string, Set<WebSocket>>();
 const userIds = new WeakMap<WebSocket, string>();
 const userNames = new WeakMap<WebSocket, string>();
 
+// Max messages returned as history replay on join
+const HISTORY_LIMIT = 50;
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     sdk.init(env);
@@ -29,9 +32,21 @@ export default {
 
     if (url.pathname === '/') {
       return new Response(
-        'WebSocket Chat is running. Connect via WebSocket to /ws/<roomId> for group chat.',
+        'WebSocket Chat (Neon) is running. Connect via WebSocket to /ws/<roomId>.\n' +
+        'GET /rooms/<roomId>/history  — fetch message history',
         { status: 200 },
       );
+    }
+
+    // HTTP endpoint to retrieve message history for a room
+    if (url.pathname.match(/^\/rooms\/[^/]+\/history$/) && request.method === 'GET') {
+      const roomId = url.pathname.split('/')[2];
+      await ensureSchema();
+      const { results } = await sdk.db.query(
+        'SELECT id, user_id, username, text, created_at FROM messages WHERE room_id = $1 ORDER BY id DESC LIMIT $2',
+        [roomId, String(HISTORY_LIMIT)],
+      );
+      return Response.json({ roomId, messages: results.reverse() });
     }
 
     if (url.pathname.startsWith('/ws/') && request.headers.get('Upgrade') === 'websocket') {
@@ -52,33 +67,55 @@ export default {
   },
 };
 
+async function ensureSchema() {
+  await sdk.db.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id         BIGSERIAL PRIMARY KEY,
+      room_id    TEXT        NOT NULL,
+      user_id    TEXT        NOT NULL,
+      username   TEXT        NOT NULL,
+      text       TEXT        NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await sdk.db.query(
+    'CREATE INDEX IF NOT EXISTS idx_messages_room_id ON messages (room_id, id DESC)',
+  );
+}
+
 function handleSession(ws: WebSocket, roomId: string, ctx: ExecutionContext) {
   ws.accept();
 
   const room = getOrCreateRoom(roomId);
   const userId = crypto.randomUUID();
-
-  // Default username until they send 'join'
   const defaultName = `User ${userId.substring(0, 4)}`;
 
   room.add(ws);
   userIds.set(ws, userId);
   userNames.set(ws, defaultName);
 
-  broadcast(roomId, {
-    type: 'system',
-    message: `${defaultName} joined room ${roomId}`,
-  });
+  broadcast(roomId, { type: 'system', message: `${defaultName} joined room ${roomId}` });
 
-  // Replay recent chat history from KV for the new joiner
-  sdk.cache.get<{ from: string; username?: string; text: string; timestamp: number }[]>(`history_${roomId}`)
-    .then(history => {
-      if (history && history.length > 0) {
-        for (const msg of history) {
-          ws.send(JSON.stringify({ ...msg, type: 'chat' }));
-        }
+  // Replay last HISTORY_LIMIT messages from Neon
+  sdk.db
+    .query(
+      'SELECT user_id, username, text, extract(epoch from created_at)*1000 AS ts FROM messages WHERE room_id = $1 ORDER BY id DESC LIMIT $2',
+      [roomId, String(HISTORY_LIMIT)],
+    )
+    .then(({ results }) => {
+      for (const row of [...results].reverse()) {
+        ws.send(
+          JSON.stringify({
+            type: 'chat',
+            from: row.user_id as string,
+            username: row.username as string,
+            text: row.text as string,
+            timestamp: Number(row.ts),
+          } as OutgoingMessage),
+        );
       }
-    }).catch(() => { /* ignore */ });
+    })
+    .catch(() => { /* ignore */ });
 
   ws.addEventListener('message', async (event) => {
     const id = userIds.get(ws);
@@ -97,36 +134,27 @@ function handleSession(ws: WebSocket, roomId: string, ctx: ExecutionContext) {
       if (msg.type === 'join') {
         userNames.set(ws, msg.username);
         ws.send(JSON.stringify({ type: 'joined', userId: id, username: msg.username, roomId } as OutgoingMessage));
-        broadcast(roomId, {
-          type: 'system',
-          message: `${msg.username} entered the chat`,
-        });
+        broadcast(roomId, { type: 'system', message: `${msg.username} entered the chat` });
         return;
       }
 
       if (msg.type === 'chat') {
-        const chat: OutgoingMessage = {
-          type: 'chat',
-          from: id,
-          username,
-          text: msg.text,
-          timestamp: Date.now(),
-        };
+        const ts = Date.now();
+        const chat: OutgoingMessage = { type: 'chat', from: id, username, text: msg.text, timestamp: ts };
         broadcast(roomId, chat);
 
-        // Persist history to KV in background — does not block the message loop
+        // Persist message to Neon in background
         ctx.waitUntil((async () => {
           try {
-            const key = `history_${roomId}`;
-            const history = (await sdk.cache.get<any[]>(key)) || [];
-            history.push({ from: id, username, text: msg.text, timestamp: (chat as any).timestamp });
-            if (history.length > 20) history.shift(); // keep last 20 messages
-            await sdk.cache.set(key, history);
+            await ensureSchema();
+            await sdk.db.query(
+              'INSERT INTO messages (room_id, user_id, username, text) VALUES ($1, $2, $3, $4)',
+              [roomId, id, username, msg.text],
+            );
           } catch (e) {
-            console.error('Failed to save chat history', e);
+            console.error('Failed to persist message', e);
           }
         })());
-
         return;
       }
 
@@ -134,9 +162,7 @@ function handleSession(ws: WebSocket, roomId: string, ctx: ExecutionContext) {
     } catch (err: any) {
       try {
         ws.send(JSON.stringify({ type: 'error', message: err?.message ?? 'Internal error' } as OutgoingMessage));
-      } catch {
-        // ignore send failures
-      }
+      } catch { /* ignore */ }
     }
   });
 
@@ -167,9 +193,8 @@ function getOrCreateRoom(roomId: string): Set<WebSocket> {
 function broadcast(roomId: string, message: OutgoingMessage) {
   const room = rooms.get(roomId);
   if (!room) return;
-
   const payload = JSON.stringify(message);
   for (const ws of room) {
-    try { ws.send(payload); } catch { /* ignore failed sends */ }
+    try { ws.send(payload); } catch { /* ignore */ }
   }
 }

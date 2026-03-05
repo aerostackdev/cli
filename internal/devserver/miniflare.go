@@ -552,7 +552,8 @@ export default proxy;
 		sb.WriteString("[[hyperdrive]]\n")
 		sb.WriteString(fmt.Sprintf("binding = %q\n", pg.Binding))
 		sb.WriteString("id = \"local-hyperdrive\"\n")
-		sb.WriteString("# For local: set CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_" + pg.Binding + " in .env\n")
+		sb.WriteString("local_connection_string = \"postgres://user:pass@127.0.0.1:1/db\"\n")
+		sb.WriteString("# For local: set CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_" + pg.Binding + " in .env to override\n")
 		sb.WriteString("# For remote: run 'wrangler hyperdrive create <name> --connection-string=...' and add id here\n\n")
 	}
 
