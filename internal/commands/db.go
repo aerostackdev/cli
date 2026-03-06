@@ -151,7 +151,8 @@ func applyMigrations(remote string) error {
 		}
 		for _, db := range cfg.D1Databases {
 			fmt.Printf("📦 Applying migrations to D1 %s (%s)...\n", db.Binding, db.DatabaseName)
-			args := []string{"-y", "wrangler@latest", "d1", "migrations", "apply", db.DatabaseName}
+			args := []string{"-y", "wrangler@latest", "d1", "migrations", "apply", db.DatabaseName,
+				"--config", filepath.Join(".aerostack", "wrangler.toml")}
 			if useRemote {
 				args = append(args, "--remote")
 			} else {
