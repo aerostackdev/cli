@@ -471,16 +471,22 @@ export default proxy;
 	buildCmd := fmt.Sprintf("npx esbuild %q %s", cfg.Main, esbuildFlags)
 
 	sb.WriteString(fmt.Sprintf("name = %q\n", cfg.Name))
-	// Compute 'main' relative to the wrangler.toml location, not the project root.
-	// When wrangler.toml lives in a subdir (e.g. .aerostack/), main must use a relative path back up.
+	// Compute paths relative to the wrangler.toml location, not the project root.
+	// When wrangler.toml lives in a subdir (e.g. .aerostack/), paths must use a relative path back up.
 	wranglerDir := filepath.Dir(outputPath)
 	var mainPath string
+	var migrationsDir string
 	if wranglerDir == "." || wranglerDir == "" {
 		mainPath = "dist/worker.js"
+		migrationsDir = "migrations"
 	} else {
-		// e.g. .aerostack/ → ../dist/worker.js
-		relBack, _ := filepath.Rel(wranglerDir, ".")
+		// e.g. .aerostack/ → ../dist/worker.js, ../migrations
+		relBack, err := filepath.Rel(wranglerDir, ".")
+		if err != nil {
+			relBack = ".." // safe fallback: one level up covers the common .aerostack/ case
+		}
 		mainPath = filepath.ToSlash(filepath.Join(relBack, "dist/worker.js"))
+		migrationsDir = filepath.ToSlash(filepath.Join(relBack, "migrations"))
 	}
 	sb.WriteString(fmt.Sprintf("main = %q\n", mainPath))
 	sb.WriteString(fmt.Sprintf("compatibility_date = %q\n", cfg.CompatibilityDate))
@@ -504,7 +510,10 @@ export default proxy;
 		sb.WriteString("[[d1_databases]]\n")
 		sb.WriteString(fmt.Sprintf("binding = %q\n", db.Binding))
 		sb.WriteString(fmt.Sprintf("database_name = %q\n", db.DatabaseName))
-		sb.WriteString(fmt.Sprintf("database_id = %q\n\n", db.DatabaseID))
+		sb.WriteString(fmt.Sprintf("database_id = %q\n", db.DatabaseID))
+		// Point migrations_dir back to the project root migrations/ folder.
+		// The wrangler.toml lives in .aerostack/ so a relative path is needed.
+		sb.WriteString(fmt.Sprintf("migrations_dir = %q\n\n", migrationsDir))
 	}
 
 	for _, ns := range cfg.KVNamespaces {
@@ -632,7 +641,9 @@ func GenerateWranglerTomlForService(cfg *AerostackConfig, svc Service, outputPat
 		sb.WriteString("[[d1_databases]]\n")
 		sb.WriteString(fmt.Sprintf("binding = %q\n", db.Binding))
 		sb.WriteString(fmt.Sprintf("database_name = %q\n", db.DatabaseName))
-		sb.WriteString(fmt.Sprintf("database_id = %q\n\n", db.DatabaseID))
+		sb.WriteString(fmt.Sprintf("database_id = %q\n", db.DatabaseID))
+		// Service wrangler configs live in .aerostack/ → migrations are one level up
+		sb.WriteString("migrations_dir = \"../migrations\"\n\n")
 	}
 	for _, ns := range cfg.KVNamespaces {
 		sb.WriteString("[[kv_namespaces]]\n")
