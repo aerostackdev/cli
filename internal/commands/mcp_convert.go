@@ -127,11 +127,11 @@ Examples:
 			// Show warnings
 			for _, w := range result.Warnings {
 				if strings.HasPrefix(w, "[ERROR]") {
-					printer.Error(w)
+					printer.Error("%s", w)
 				} else if strings.HasPrefix(w, "[WARN]") {
-					printer.Warn(w)
+					printer.Warn("%s", w)
 				} else {
-					printer.Hint(w)
+					printer.Hint("%s", w)
 				}
 			}
 
