@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	version = "v1.5.47"
+	version = "v1.5.48"
 	commit  = "none"
 	date    = "unknown"
 )
@@ -59,6 +59,7 @@ Features:
 	rootCmd.AddCommand(commands.NewUICommand())
 	rootCmd.AddCommand(commands.NewFunctionsCommand())
 	rootCmd.AddCommand(commands.NewMigrateCommand())
+	rootCmd.AddCommand(commands.NewMcpCommand())
 	rootCmd.AddCommand(commands.NewUninstallCommand())
 
 	// No args: show welcome screen instead of default help

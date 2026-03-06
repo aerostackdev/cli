@@ -164,12 +164,8 @@ func patchIndexTs(manifest *api.InstallManifest) error {
 	importMarker := "// aerostack:imports"
 	routeMarker := "// aerostack:routes"
 
-	if strings.Contains(src, importMarker) {
-		src = strings.Replace(src, importMarker, importMarker+"\n"+importLine, 1)
-	}
-	if strings.Contains(src, routeMarker) {
-		src = strings.Replace(src, routeMarker, routeMarker+"\n"+routeLine, 1)
-	}
+	src = strings.Replace(src, importMarker, importMarker+"\n"+importLine, 1)
+	src = strings.Replace(src, routeMarker, routeMarker+"\n"+routeLine, 1)
 
 	return os.WriteFile(indexPath, []byte(src), 0644)
 }
@@ -222,6 +218,7 @@ func NewFunctionsPushCommand() *cobra.Command {
 				Tags:        tags,
 				Language:    "typescript",
 				Runtime:     "cloudflare-worker",
+				Files:       make(map[string]string),
 			}
 
 			// Read aerostack.json configuration. Check file directory then CWD.
@@ -230,9 +227,11 @@ func NewFunctionsPushCommand() *cobra.Command {
 				"aerostack.json",
 			}
 			var configContent []byte
+			var configPath string
 			for _, cp := range configPaths {
 				if content, err := os.ReadFile(cp); err == nil {
 					configContent = content
+					configPath = cp
 					break
 				}
 			}
@@ -251,11 +250,39 @@ func NewFunctionsPushCommand() *cobra.Command {
 				if confDesc, ok := configData["description"].(string); ok && confDesc != "" {
 					fn.Description = confDesc
 				}
-				if confType, ok := configData["type"].(string); ok && confType != "" {
-					fn.Category = confType // Maps schema 'type' to DB 'category'
+				if confCat, ok := configData["category"].(string); ok && confCat != "" {
+					fn.Category = confCat
+				} else if confType, ok := configData["type"].(string); ok && confType != "" {
+					fn.Category = confType // Legacy/Fallback
 				}
 				if confVersion, ok := configData["version"].(string); ok && confVersion != "" {
 					fn.Version = confVersion
+				}
+
+				// OFS v1 Multi-file support: Collect files if schema matches
+				if schema, ok := configData["$schema"].(string); ok && strings.Contains(schema, "ofs-v1.json") {
+					fn.Files["aerostack.json"] = string(configContent)
+					// Collect standard OFS files if they exist
+					baseDir := filepath.Dir(configPath)
+					ofsFiles := []string{
+						"src/core.ts",
+						"src/adapter.ts",
+						"src/node-adapter.ts",
+						"src/index.ts",
+						"src/schema.ts",
+						"README.md",
+						"package.json",
+					}
+					for _, relPath := range ofsFiles {
+						fullPath := filepath.Join(baseDir, relPath)
+						if data, err := os.ReadFile(fullPath); err == nil {
+							fn.Files[relPath] = string(data)
+						}
+					}
+					// Ensure 'Code' is set to core.ts if it exists
+					if coreCode, ok := fn.Files["src/core.ts"]; ok {
+						fn.Code = coreCode
+					}
 				}
 
 				// Update local name variable for logging
@@ -267,10 +294,15 @@ func NewFunctionsPushCommand() *cobra.Command {
 				fn.Version = "1.0.0"
 			}
 
-			// Try to read README.md in the same directory
-			readmePath := filepath.Join(filepath.Dir(filePath), "README.md")
-			if readmeContent, err := os.ReadFile(readmePath); err == nil {
-				fn.Readme = string(readmeContent)
+			// Try to read README.md in the same directory (fallback if not already in fn.Files)
+			if _, ok := fn.Files["README.md"]; !ok {
+				readmePath := filepath.Join(filepath.Dir(filePath), "README.md")
+				if readmeContent, err := os.ReadFile(readmePath); err == nil {
+					fn.Readme = string(readmeContent)
+					fn.Files["README.md"] = string(readmeContent)
+				}
+			} else {
+				fn.Readme = fn.Files["README.md"]
 			}
 
 			fmt.Printf("🚀 Pushing function '%s' to Aerostack...\n", fn.Name)

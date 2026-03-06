@@ -5,6 +5,20 @@ All notable changes to the Aerostack CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.48] - 2026-03-05
+
+### Added
+- **OFS v1 Support**: Added support for multi-file function pushes in `aerostack functions push`.
+- **MCP Deployment**: Added `aerostack deploy mcp` command for hosted MCP server deployment.
+
+### Fixed
+- **Version Sync**: Synchronized CLI and NPM package versions.
+
+## [1.5.47] - 2026-03-05
+
+### Added
+- **Template E2E Fixes**: Improved template stability and verification.
+
 ## [1.5.15] - 2026-02-26
 
 ### Fixed

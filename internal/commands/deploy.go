@@ -102,6 +102,9 @@ Examples:
 	cmd.Flags().BoolVar(&isPrivate, "private", false, "Make the deployed service private (requires authentication)")
 	cmd.Flags().BoolVar(&syncSecrets, "sync-secrets", false, "Push non-standard .dev.vars keys as secrets to the target environment before deploying")
 
+	// Subcommands
+	cmd.AddCommand(NewDeployMcpCommand())
+
 	return cmd
 }
 

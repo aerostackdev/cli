@@ -192,22 +192,23 @@ type DeployResponse struct {
 }
 
 type CommunityFunction struct {
-	ID             string      `json:"id"`
-	Slug           string      `json:"slug"`
-	Name           string      `json:"name"`
-	Description    string      `json:"description"`
-	Readme         string      `json:"readme"`
-	Category       string      `json:"category"`
-	Tags           []string    `json:"tags"`
-	Language       string      `json:"language"`
-	Runtime        string      `json:"runtime"`
-	Code           string      `json:"code"`
-	ConfigSchema   interface{} `json:"config_schema"`
-	License        string      `json:"license"`
-	Version        string      `json:"version"`
-	Status         string      `json:"status"`
-	AuthorUsername string      `json:"author_username"`
-	URL            string      `json:"url"`
+	ID             string            `json:"id"`
+	Slug           string            `json:"slug"`
+	Name           string            `json:"name"`
+	Description    string            `json:"description"`
+	Readme         string            `json:"readme"`
+	Category       string            `json:"category"`
+	Tags           []string          `json:"tags"`
+	Language       string            `json:"language"`
+	Runtime        string            `json:"runtime"`
+	Code           string            `json:"code"`
+	Files          map[string]string `json:"files,omitempty"`
+	ConfigSchema   interface{}       `json:"config_schema"`
+	License        string            `json:"license"`
+	Version        string            `json:"version"`
+	Status         string            `json:"status"`
+	AuthorUsername string            `json:"author_username"`
+	URL            string            `json:"url"`
 }
 
 // InstallFile is a single source file in an OFS install manifest.
@@ -474,6 +475,65 @@ func CommunityPublish(apiKey, id string) error {
 		return fmt.Errorf("publish failed (%d): %s", resp.StatusCode, string(body))
 	}
 	return nil
+}
+
+type CommunityDeployMcpResponse struct {
+	Success     bool   `json:"success"`
+	Hosted      bool   `json:"hosted"`
+	WorkerURL   string `json:"worker_url"`
+	MCPServerID string `json:"mcp_server_id"`
+	Slug        string `json:"slug"`
+	Env         string `json:"env"`
+	Message     string `json:"message"`
+}
+
+func CommunityDeployMcp(apiKey string, workerPath string, slug string, env string) (*CommunityDeployMcpResponse, error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+
+	_ = w.WriteField("slug", slug)
+	_ = w.WriteField("env", env)
+
+	workerData, err := os.ReadFile(workerPath)
+	if err != nil {
+		return nil, fmt.Errorf("read worker file: %w", err)
+	}
+	part, err := w.CreateFormFile("worker", "worker.js")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := part.Write(workerData); err != nil {
+		return nil, err
+	}
+
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+
+	url := getBaseURL() + "/api/v1/cli/deploy/mcp"
+	req, err := http.NewRequest("POST", url, &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 && resp.StatusCode != 210 {
+		return nil, fmt.Errorf("mcp deploy failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var out CommunityDeployMcpResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // CommunityGetInstallManifest fetches the full OFS install manifest for username/slug.
