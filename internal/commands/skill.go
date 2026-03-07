@@ -179,12 +179,8 @@ Examples:
 				return err
 			}
 
-			status := "draft"
-			if publish {
-				status = "published"
-			}
-			fmt.Printf("✓ Skill '%s' %s (id: %s)\n", result.Name, status, result.ID)
-			if publish {
+			fmt.Printf("✓ Skill '%s' created as %s (id: %s)\n", result.Slug, result.Status, result.ID)
+			if result.Status == "published" {
 				fmt.Printf("  Marketplace: hub.aerostack.ai/skills/%s\n", result.Slug)
 			} else {
 				fmt.Printf("  Run with --publish to make it live on the marketplace.\n")
@@ -223,8 +219,32 @@ func NewSkillListCommand() *cobra.Command {
 				return err
 			}
 
+			detail, err := api.WorkspaceGet(apiKey, ws.ID)
+			if err != nil {
+				return fmt.Errorf("failed to fetch workspace details: %w", err)
+			}
+
+			if len(detail.Servers) == 0 {
+				fmt.Printf("No skills installed in workspace '%s'.\n", ws.Slug)
+				fmt.Printf("Install one with: aerostack skill install <username/slug>\n")
+				return nil
+			}
+
 			fmt.Printf("Skills in workspace '%s' (%s):\n\n", ws.Slug, ws.GatewayURL)
-			fmt.Printf("Run 'aerostack workspace list' to see all workspaces.\n")
+			fmt.Printf("  %-24s %-8s %s\n", "NAME", "TOOLS", "STATUS")
+			fmt.Printf("  %-24s %-8s %s\n", "----", "-----", "------")
+			for _, s := range detail.Servers {
+				status := "enabled"
+				if !s.Enabled {
+					status = "disabled"
+				}
+				name := s.Name
+				if len(name) > 22 {
+					name = name[:19] + "..."
+				}
+				fmt.Printf("  %-24s %-8d %s\n", name, s.ToolCount, status)
+			}
+			fmt.Printf("\nGateway: %s\n", ws.GatewayURL)
 			return nil
 		},
 	}

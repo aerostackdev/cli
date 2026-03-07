@@ -584,16 +584,21 @@ func CommunityGetInstallManifestBySlug(slug string) (*InstallManifest, error) {
 // ─── Skill types ──────────────────────────────────────────────────────────────
 
 type SkillInfo struct {
-	ID          string `json:"id"`
-	Slug        string `json:"slug"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Visibility  string `json:"visibility"`
-	AuthorSlug  string `json:"author_slug"`
-	Tools       []struct {
+	ID             string `json:"id"`
+	Slug           string `json:"slug"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	Visibility     string `json:"visibility"`
+	AuthorUsername string `json:"author_username"`
+	AccessType     string `json:"access_type"`
+	Tools          []struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	} `json:"tools"`
+}
+
+type skillGetResponse struct {
+	Server SkillInfo `json:"server"`
 }
 
 type SkillPublishPayload struct {
@@ -608,9 +613,11 @@ type SkillPublishPayload struct {
 }
 
 type SkillPublishResponse struct {
-	ID   string `json:"id"`
-	Slug string `json:"slug"`
-	Name string `json:"name"`
+	ID     string `json:"id"`
+	Slug   string `json:"slug"`
+	Author string `json:"author"`
+	Status string `json:"status"`
+	URL    string `json:"url"`
 }
 
 // ─── Workspace types ──────────────────────────────────────────────────────────
@@ -620,6 +627,20 @@ type Workspace struct {
 	Slug       string `json:"slug"`
 	Name       string `json:"name"`
 	GatewayURL string `json:"gateway_url"`
+}
+
+type WorkspaceServer struct {
+	WsServerID string `json:"ws_server_id"`
+	ServerID   string `json:"server_id"`
+	Slug       string `json:"slug"`
+	Name       string `json:"name"`
+	ToolCount  int    `json:"tool_count"`
+	Enabled    bool   `json:"enabled"`
+}
+
+type WorkspaceDetail struct {
+	Workspace
+	Servers []WorkspaceServer `json:"servers"`
 }
 
 type WorkspaceListResponse struct {
@@ -645,11 +666,11 @@ func SkillGet(username, slug string) (*SkillInfo, error) {
 		return nil, fmt.Errorf("failed to fetch skill (%d): %s", resp.StatusCode, string(body))
 	}
 
-	var info SkillInfo
-	if err := json.Unmarshal(body, &info); err != nil {
+	var wrapper skillGetResponse
+	if err := json.Unmarshal(body, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to parse skill info: %w", err)
 	}
-	return &info, nil
+	return &wrapper.Server, nil
 }
 
 // SkillPublish creates or updates a skill in the registry.
@@ -689,7 +710,7 @@ func SkillPublish(apiKey string, payload SkillPublishPayload) (*SkillPublishResp
 
 // WorkspaceList returns all workspaces owned by the authenticated user.
 func WorkspaceList(apiKey string) ([]Workspace, error) {
-	url := getBaseURL() + "/api/community/workspaces"
+	url := getBaseURL() + "/api/community/mcp/workspaces"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -716,7 +737,7 @@ func WorkspaceList(apiKey string) ([]Workspace, error) {
 
 // WorkspaceCreate creates a new workspace and returns it.
 func WorkspaceCreate(apiKey, name string) (*Workspace, error) {
-	url := getBaseURL() + "/api/community/workspaces"
+	url := getBaseURL() + "/api/community/mcp/workspaces"
 	data, _ := json.Marshal(map[string]string{"name": name})
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
@@ -744,9 +765,36 @@ func WorkspaceCreate(apiKey, name string) (*Workspace, error) {
 	return &ws, nil
 }
 
+// WorkspaceGet returns full workspace details including servers.
+func WorkspaceGet(apiKey, workspaceID string) (*WorkspaceDetail, error) {
+	url := fmt.Sprintf("%s/api/community/mcp/workspaces/%s", getBaseURL(), workspaceID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("workspace get failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var detail WorkspaceDetail
+	if err := json.Unmarshal(body, &detail); err != nil {
+		return nil, err
+	}
+	return &detail, nil
+}
+
 // WorkspaceAddServer adds a skill/MCP server to a workspace by workspace ID + server ID.
 func WorkspaceAddServer(apiKey, workspaceID, serverID string) error {
-	url := fmt.Sprintf("%s/api/community/workspaces/%s/servers", getBaseURL(), workspaceID)
+	url := fmt.Sprintf("%s/api/community/mcp/workspaces/%s/servers", getBaseURL(), workspaceID)
 	data, _ := json.Marshal(map[string]string{"server_id": serverID})
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
