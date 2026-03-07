@@ -61,6 +61,8 @@ Features:
 	rootCmd.AddCommand(commands.NewMigrateCommand())
 	rootCmd.AddCommand(commands.NewMcpCommand())
 	rootCmd.AddCommand(commands.NewUninstallCommand())
+	rootCmd.AddCommand(commands.NewSkillCommand())
+	rootCmd.AddCommand(commands.NewWorkspaceCommand())
 
 	// No args: show welcome screen instead of default help
 	if len(os.Args) == 1 {

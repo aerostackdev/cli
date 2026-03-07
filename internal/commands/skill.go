@@ -1,0 +1,313 @@
+package commands
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/aerostackdev/cli/internal/api"
+	"github.com/aerostackdev/cli/internal/credentials"
+	"github.com/spf13/cobra"
+)
+
+// NewSkillCommand creates the 'aerostack skill' root command.
+func NewSkillCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "skill",
+		Short: "Manage skills in the Aerostack marketplace",
+		Long: `Install, publish, list, and remove AI skills from the Aerostack marketplace.
+
+Skills are atomic, single-purpose tools that any LLM can call through your workspace gateway.
+Once installed, skills appear automatically through your existing gateway URL — no config changes needed.
+
+Examples:
+  aerostack skill install johndoe/github-skill
+  aerostack skill install @acme/internal-skill
+  aerostack skill publish --name "My Skill" --function abc-123
+  aerostack skill list`,
+	}
+
+	cmd.AddCommand(NewSkillInstallCommand())
+	cmd.AddCommand(NewSkillPublishCommand())
+	cmd.AddCommand(NewSkillListCommand())
+	cmd.AddCommand(NewSkillRemoveCommand())
+	return cmd
+}
+
+// ─── skill install ────────────────────────────────────────────────────────────
+
+// NewSkillInstallCommand creates 'aerostack skill install <username/slug>'.
+func NewSkillInstallCommand() *cobra.Command {
+	var workspaceSlug string
+
+	cmd := &cobra.Command{
+		Use:   "install <username/slug>",
+		Short: "Install a skill into your active workspace",
+		Long: `Install a skill from the Aerostack marketplace into your workspace.
+
+The skill's tools will be available immediately through your gateway URL with no config changes.
+Tool names are namespaced to prevent collisions: {skill-slug}__{tool-name}.
+
+Examples:
+  aerostack skill install johndoe/github-skill
+  aerostack skill install @acme/internal-skill
+  aerostack skill install johndoe/slack-skill --workspace my-other-workspace`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ref := strings.TrimPrefix(args[0], "@")
+			parts := strings.SplitN(ref, "/", 2)
+			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+				return fmt.Errorf("invalid skill reference. Use: username/slug or @username/slug")
+			}
+			username, slug := parts[0], parts[1]
+
+			apiKey := credentials.GetAPIKey()
+			if apiKey == "" {
+				return fmt.Errorf("not logged in. Run: aerostack login")
+			}
+
+			// 1. Fetch skill metadata
+			fmt.Printf("🔍 Looking up %s/%s...\n", username, slug)
+			skill, err := api.SkillGet(username, slug)
+			if err != nil {
+				return err
+			}
+
+			// 2. Check team membership if skill is private/team-only
+			if skill.Visibility == "team" {
+				fmt.Printf("🔒 %s/%s is a team skill — checking membership...\n", username, slug)
+				isMember, err := api.TeamCheckMembership(apiKey, username)
+				if err != nil {
+					return fmt.Errorf("team membership check failed: %w", err)
+				}
+				if !isMember {
+					return fmt.Errorf("access denied: you are not a member of @%s's team.\nAsk %s to invite you via hub.aerostack.ai", username, username)
+				}
+			} else if skill.Visibility == "private" {
+				return fmt.Errorf("'%s/%s' is private and can only be added by its owner", username, slug)
+			}
+
+			// 3. Resolve workspace
+			ws, err := resolveOrCreateWorkspace(apiKey, workspaceSlug)
+			if err != nil {
+				return err
+			}
+
+			// 4. Add skill to workspace
+			fmt.Printf("📥 Installing %s/%s into workspace '%s'...\n", username, slug, ws.Slug)
+			if err := api.WorkspaceAddServer(apiKey, ws.ID, skill.ID); err != nil {
+				return err
+			}
+
+			// 5. Print tool names
+			fmt.Printf("\n✓ Skill installed! The following tools are now available in your gateway:\n")
+			for _, t := range skill.Tools {
+				fmt.Printf("  %s__%s\n", slug, t.Name)
+			}
+			fmt.Printf("\nGateway URL (unchanged): %s\n", ws.GatewayURL)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&workspaceSlug, "workspace", "", "Target workspace slug (defaults to active workspace)")
+	return cmd
+}
+
+// ─── skill publish ────────────────────────────────────────────────────────────
+
+// NewSkillPublishCommand creates 'aerostack skill publish'.
+func NewSkillPublishCommand() *cobra.Command {
+	var (
+		name        string
+		description string
+		functionID  string
+		workerURL   string
+		tags        string
+		visibility  string
+		publish     bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "publish",
+		Short: "Publish a skill to the Aerostack marketplace",
+		Long: `Create or update a skill in the Aerostack marketplace.
+
+A skill can be backed by a deployed Aerostack function (--function) or an external HTTPS server (--worker-url).
+
+Examples:
+  # Function-backed skill (no server needed):
+  aerostack skill publish --name "Invoice Extractor" --function abc-123 --publish
+
+  # External server:
+  aerostack skill publish --name "My Tool" --worker-url https://my-server.example.com
+
+  # Private team skill:
+  aerostack skill publish --name "Internal Tool" --function abc-123 --visibility team`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if name == "" {
+				return fmt.Errorf("--name is required")
+			}
+			if functionID == "" && workerURL == "" {
+				return fmt.Errorf("either --function or --worker-url is required")
+			}
+
+			apiKey := credentials.GetAPIKey()
+			if apiKey == "" {
+				return fmt.Errorf("not logged in. Run: aerostack login")
+			}
+
+			if visibility == "" {
+				visibility = "public"
+			}
+
+			payload := api.SkillPublishPayload{
+				Name:               name,
+				Description:        description,
+				BackedByFunctionID: functionID,
+				WorkerURL:          workerURL,
+				Visibility:         visibility,
+				Publish:            publish,
+			}
+			if tags != "" {
+				for _, t := range strings.Split(tags, ",") {
+					payload.Tags = append(payload.Tags, strings.TrimSpace(t))
+				}
+			}
+
+			fmt.Printf("📤 Publishing skill '%s'...\n", name)
+			result, err := api.SkillPublish(apiKey, payload)
+			if err != nil {
+				return err
+			}
+
+			status := "draft"
+			if publish {
+				status = "published"
+			}
+			fmt.Printf("✓ Skill '%s' %s (id: %s)\n", result.Name, status, result.ID)
+			if publish {
+				fmt.Printf("  Marketplace: hub.aerostack.ai/skills/%s\n", result.Slug)
+			} else {
+				fmt.Printf("  Run with --publish to make it live on the marketplace.\n")
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "Display name for the skill (required)")
+	cmd.Flags().StringVar(&description, "description", "", "Short description shown in search results")
+	cmd.Flags().StringVar(&functionID, "function", "", "ID of a deployed Aerostack function to back this skill")
+	cmd.Flags().StringVar(&workerURL, "worker-url", "", "External HTTPS MCP server URL")
+	cmd.Flags().StringVar(&tags, "tags", "", "Comma-separated tags for discovery")
+	cmd.Flags().StringVar(&visibility, "visibility", "public", "Visibility: public, team, or private")
+	cmd.Flags().BoolVar(&publish, "publish", false, "Publish immediately to the marketplace")
+	return cmd
+}
+
+// ─── skill list ───────────────────────────────────────────────────────────────
+
+// NewSkillListCommand creates 'aerostack skill list'.
+func NewSkillListCommand() *cobra.Command {
+	var workspaceSlug string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List skills installed in your workspace",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			apiKey := credentials.GetAPIKey()
+			if apiKey == "" {
+				return fmt.Errorf("not logged in. Run: aerostack login")
+			}
+
+			ws, err := resolveOrCreateWorkspace(apiKey, workspaceSlug)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("Skills in workspace '%s' (%s):\n\n", ws.Slug, ws.GatewayURL)
+			fmt.Printf("Run 'aerostack workspace list' to see all workspaces.\n")
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&workspaceSlug, "workspace", "", "Workspace slug (defaults to active workspace)")
+	return cmd
+}
+
+// ─── skill remove ─────────────────────────────────────────────────────────────
+
+// NewSkillRemoveCommand creates 'aerostack skill remove <username/slug>'.
+func NewSkillRemoveCommand() *cobra.Command {
+	var workspaceSlug string
+
+	cmd := &cobra.Command{
+		Use:   "remove <username/slug>",
+		Short: "Remove a skill from your workspace",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Printf("ℹ  To remove a skill, go to hub.aerostack.ai → Workspaces → %s → remove the skill.\n", workspaceSlug)
+			fmt.Println("CLI removal coming in a future release.")
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&workspaceSlug, "workspace", "", "Workspace slug (defaults to active workspace)")
+	return cmd
+}
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+// resolveOrCreateWorkspace finds the target workspace: --workspace flag, active workspace, or creates default.
+func resolveOrCreateWorkspace(apiKey, slugOverride string) (*api.Workspace, error) {
+	workspaces, err := api.WorkspaceList(apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list workspaces: %w", err)
+	}
+
+	// If --workspace flag is set, find it
+	if slugOverride != "" {
+		for i, ws := range workspaces {
+			if ws.Slug == slugOverride || ws.Name == slugOverride {
+				return &workspaces[i], nil
+			}
+		}
+		return nil, fmt.Errorf("workspace '%s' not found. Run 'aerostack workspace list' to see available workspaces", slugOverride)
+	}
+
+	// Check active workspace from config
+	cfg, _ := credentials.LoadConfig()
+	if cfg != nil && cfg.ActiveWorkspace != "" {
+		for i, ws := range workspaces {
+			if ws.Slug == cfg.ActiveWorkspace {
+				return &workspaces[i], nil
+			}
+		}
+	}
+
+	// Use first workspace if only one exists
+	if len(workspaces) == 1 {
+		return &workspaces[0], nil
+	}
+
+	// Multiple workspaces but none active — prompt user to set one
+	if len(workspaces) > 1 {
+		fmt.Println("You have multiple workspaces. Set an active one with:")
+		for _, ws := range workspaces {
+			fmt.Printf("  aerostack workspace use %s\n", ws.Slug)
+		}
+		return nil, fmt.Errorf("no active workspace set")
+	}
+
+	// No workspaces exist — create a default one
+	fmt.Println("No workspaces found. Creating a default workspace...")
+	ws, err := api.WorkspaceCreate(apiKey, "default")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create default workspace: %w", err)
+	}
+
+	// Save it as active
+	cfg = &credentials.CLIConfig{ActiveWorkspace: ws.Slug}
+	_ = credentials.SaveConfig(cfg)
+
+	fmt.Printf("✓ Created workspace '%s'\n", ws.Slug)
+	return ws, nil
+}

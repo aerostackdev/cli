@@ -580,3 +580,223 @@ func CommunityGetInstallManifestBySlug(slug string) (*InstallManifest, error) {
 	}
 	return &manifest, nil
 }
+
+// ─── Skill types ──────────────────────────────────────────────────────────────
+
+type SkillInfo struct {
+	ID          string `json:"id"`
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Visibility  string `json:"visibility"`
+	AuthorSlug  string `json:"author_slug"`
+	Tools       []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	} `json:"tools"`
+}
+
+type SkillPublishPayload struct {
+	Name               string   `json:"name"`
+	Description        string   `json:"description"`
+	Tools              []any    `json:"tools,omitempty"`
+	BackedByFunctionID string   `json:"backed_by_function_id,omitempty"`
+	WorkerURL          string   `json:"worker_url,omitempty"`
+	Tags               []string `json:"tags,omitempty"`
+	Visibility         string   `json:"visibility,omitempty"`
+	Publish            bool     `json:"publish,omitempty"`
+}
+
+type SkillPublishResponse struct {
+	ID   string `json:"id"`
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+// ─── Workspace types ──────────────────────────────────────────────────────────
+
+type Workspace struct {
+	ID         string `json:"id"`
+	Slug       string `json:"slug"`
+	Name       string `json:"name"`
+	GatewayURL string `json:"gateway_url"`
+}
+
+type WorkspaceListResponse struct {
+	Workspaces []Workspace `json:"workspaces"`
+}
+
+// ─── Skill API functions ──────────────────────────────────────────────────────
+
+// SkillGet fetches metadata for a skill by username/slug (public, no auth needed).
+func SkillGet(username, slug string) (*SkillInfo, error) {
+	url := fmt.Sprintf("%s/api/community/mcp/%s/%s", getBaseURL(), username, slug)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 404 {
+		return nil, fmt.Errorf("skill '%s/%s' not found", username, slug)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to fetch skill (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var info SkillInfo
+	if err := json.Unmarshal(body, &info); err != nil {
+		return nil, fmt.Errorf("failed to parse skill info: %w", err)
+	}
+	return &info, nil
+}
+
+// SkillPublish creates or updates a skill in the registry.
+func SkillPublish(apiKey string, payload SkillPublishPayload) (*SkillPublishResponse, error) {
+	url := getBaseURL() + "/api/community/mcp"
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		return nil, fmt.Errorf("skill publish failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var result SkillPublishResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse publish response: %w", err)
+	}
+	return &result, nil
+}
+
+// ─── Workspace API functions ──────────────────────────────────────────────────
+
+// WorkspaceList returns all workspaces owned by the authenticated user.
+func WorkspaceList(apiKey string) ([]Workspace, error) {
+	url := getBaseURL() + "/api/community/workspaces"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("workspace list failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var result WorkspaceListResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	return result.Workspaces, nil
+}
+
+// WorkspaceCreate creates a new workspace and returns it.
+func WorkspaceCreate(apiKey, name string) (*Workspace, error) {
+	url := getBaseURL() + "/api/community/workspaces"
+	data, _ := json.Marshal(map[string]string{"name": name})
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		return nil, fmt.Errorf("workspace create failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var ws Workspace
+	if err := json.Unmarshal(body, &ws); err != nil {
+		return nil, err
+	}
+	return &ws, nil
+}
+
+// WorkspaceAddServer adds a skill/MCP server to a workspace by workspace ID + server ID.
+func WorkspaceAddServer(apiKey, workspaceID, serverID string) error {
+	url := fmt.Sprintf("%s/api/community/workspaces/%s/servers", getBaseURL(), workspaceID)
+	data, _ := json.Marshal(map[string]string{"server_id": serverID})
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 409 {
+		return fmt.Errorf("skill is already in this workspace")
+	}
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		return fmt.Errorf("failed to add skill to workspace (%d): %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// TeamCheckMembership checks if the authenticated caller is a member of ownerUsername's team.
+func TeamCheckMembership(apiKey, ownerUsername string) (bool, error) {
+	url := fmt.Sprintf("%s/api/community/team/membership/%s", getBaseURL(), ownerUsername)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return false, fmt.Errorf("team membership check failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		IsMember bool `json:"isMember"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return false, err
+	}
+	return result.IsMember, nil
+}
