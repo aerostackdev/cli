@@ -10,7 +10,7 @@ AEROSTACK_PROJECT_ID=your-project-id
 AEROSTACK_API_KEY=your-api-key
 
 # Optional: override the Aerostack API URL
-# AEROSTACK_API_URL=https://api.aerocall.ai
+# AEROSTACK_API_URL=https://api.aerostack.dev
 
 # Neon connection string used by the `PG` binding
 DATABASE_URL=postgres://user:password@host/dbname

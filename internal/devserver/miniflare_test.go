@@ -33,7 +33,7 @@ func TestGenerateWranglerToml(t *testing.T) {
 	content := string(data)
 
 	// Check for AEROSTACK_API_URL injection (default: production API)
-	if !strings.Contains(content, `AEROSTACK_API_URL = "https://api.aerocall.ai"`) {
+	if !strings.Contains(content, `AEROSTACK_API_URL = "https://api.aerostack.dev"`) {
 		t.Errorf("AEROSTACK_API_URL not found in generated toml")
 	}
 

@@ -314,7 +314,7 @@ func NewFunctionsPushCommand() *cobra.Command {
 			fmt.Printf("✅ Pushed successfully!\n")
 			fmt.Printf("   Slug: %s\n", resp.Slug)
 			fmt.Printf("   Status: %s\n", resp.Status)
-			fmt.Printf("   Admin URL: https://admin.aerocall.ai/functions/edit/%s\n", resp.ID)
+			fmt.Printf("   Admin URL: https://admin.aerostack.run/functions/edit/%s\n", resp.ID)
 			return nil
 		},
 	}

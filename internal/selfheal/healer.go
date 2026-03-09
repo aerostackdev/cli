@@ -79,8 +79,8 @@ func (h *Healer) startRecursive(ctx context.Context, fullArgs []string, original
 	fmt.Println("🩹 Aerostack AI is analyzing the error...")
 
 	platformContext := `Aerostack Platform Context:
-- Admin Dashboard: https://admin.aerocall.ai
-- CLI Keys Settings: https://admin.aerocall.ai/settings
+- Admin Dashboard: https://admin.aerostack.run
+- CLI Keys Settings: https://admin.aerostack.run/settings
 - Account Keys (ak_...) are for CLI deploy/login.
 - Project Keys (pk_...) are for database/runtime access.
 - Configuration: aerostack.toml in project root.`

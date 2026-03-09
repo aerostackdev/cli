@@ -24,7 +24,7 @@ func BaseURL() string {
 	if u := os.Getenv("AEROSTACK_API_URL"); u != "" {
 		return u
 	}
-	return "https://api.aerocall.ai"
+	return "https://api.aerostack.dev"
 }
 
 type ValidateResponse struct {

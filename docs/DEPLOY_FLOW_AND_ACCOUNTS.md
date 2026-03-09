@@ -30,7 +30,7 @@
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Worker URL: https://<project>.<slug>.aerocall.ai/custom/...     │
+│  Worker URL: https://<project>.<slug>.aerostack.run/custom/...     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

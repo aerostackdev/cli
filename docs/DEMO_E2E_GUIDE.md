@@ -64,7 +64,7 @@ aerostack dev
 aerostack deploy --env staging
 ```
 
-After deploy, the CLI will output your Worker URL (e.g. `https://<slug>.aerocall.ai/custom/...`).
+After deploy, the CLI will output your Worker URL (e.g. `https://<slug>.aerostack.run/custom/...`).
 
 ---
 

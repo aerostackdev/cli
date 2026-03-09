@@ -22,7 +22,7 @@ type BackendLLM struct {
 // NewBackendLLM creates an LLM that uses the Aerostack AI proxy.
 func NewBackendLLM(baseURL, apiKey string) *BackendLLM {
 	if baseURL == "" {
-		baseURL = "https://api.aerocall.ai"
+		baseURL = "https://api.aerostack.dev"
 	}
 	return &BackendLLM{
 		baseURL: baseURL,
