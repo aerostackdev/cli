@@ -34,13 +34,10 @@ Available templates:
   • blank               - Minimal Worker (default)
   • api                 - REST API with Hono
   • api-neon            - REST API with Hono and Neon
-  • multi-func          - Multi-function sharing code
-  • cron-neon           - Scheduled task with Neon
-  • webhook-neon        - Webhook processor with Neon
-  • ws-voice-agent      - WebSocket voice/chat agent with KV session persistence
-  • ws-multiplayer-game - WebSocket multiplayer game with KV room snapshots
   • ws-chat             - WebSocket group chat with KV message history
   • ws-chat-neon        - WebSocket group chat backed by Neon (durable history)
+  • ws-voice-agent      - WebSocket voice/chat agent with KV session persistence
+  • ws-multiplayer-game - WebSocket multiplayer game with KV room snapshots
   • ai-stream           - HTTP SSE streaming AI responses
 
 Examples:
@@ -80,9 +77,6 @@ Examples:
 						huh.NewOption("Blank (Minimal Worker)", "blank"),
 						huh.NewOption("API (Hono)", "api"),
 						huh.NewOption("API + Neon (Hono)", "api-neon"),
-						huh.NewOption("Multi-Function", "multi-func"),
-						huh.NewOption("Cron + Neon", "cron-neon"),
-						huh.NewOption("Webhook + Neon", "webhook-neon"),
 						huh.NewOption("WS Chat (KV history)", "ws-chat"),
 						huh.NewOption("WS Chat + Neon (durable history)", "ws-chat-neon"),
 						huh.NewOption("WS Voice Agent (AI + session memory)", "ws-voice-agent"),
