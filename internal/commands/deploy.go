@@ -104,6 +104,7 @@ Examples:
 
 	// Subcommands
 	cmd.AddCommand(NewDeployMcpCommand())
+	cmd.AddCommand(NewDeploySkillCommand())
 
 	return cmd
 }

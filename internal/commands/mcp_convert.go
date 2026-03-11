@@ -269,8 +269,316 @@ func NewMcpCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(NewMcpConvertCommand())
+	cmd.AddCommand(NewMcpInitCommand())
+	cmd.AddCommand(NewMcpPullCommand())
 
 	return cmd
+}
+
+// NewMcpInitCommand creates 'aerostack mcp init <name>'.
+func NewMcpInitCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "init <name>",
+		Short: "Scaffold a new MCP server directory",
+		Long: `Creates a new MCP server directory with boilerplate files.
+
+The server will be scaffolded at MCP/mcp-<name>/ (or mcp-<name>/ if already inside MCP/).
+
+Examples:
+  aerostack mcp init github
+  aerostack mcp init my-tool`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := strings.ToLower(strings.TrimSpace(args[0]))
+			name = strings.TrimPrefix(name, "mcp-")
+
+			printer.Header("MCP Server Init")
+
+			// Determine output directory: if cwd already ends in MCP/, write mcp-<name>/ here
+			cwd, _ := os.Getwd()
+			var outDir string
+			if filepath.Base(cwd) == "MCP" {
+				outDir = filepath.Join(cwd, "mcp-"+name)
+			} else {
+				outDir = filepath.Join(cwd, "MCP", "mcp-"+name)
+			}
+
+			printer.Step("Creating %s/", outDir)
+
+			if err := os.MkdirAll(filepath.Join(outDir, "src"), 0755); err != nil {
+				return fmt.Errorf("create dirs: %w", err)
+			}
+
+			// src/index.ts
+			indexTs := fmt.Sprintf(`/**
+ * %s MCP Server — Aerostack Worker
+ * Edit the TOOLS array and callTool() to implement your server.
+ */
+
+const TOOLS = [
+  {
+    name: "example_tool",
+    description: "An example tool — replace with your real tools.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        input: { type: "string", description: "Input parameter" },
+      },
+      required: ["input"],
+    },
+  },
+];
+
+async function callTool(name: string, args: Record<string, unknown>, env: Record<string, string>): Promise<unknown> {
+  // The Aerostack gateway injects secrets as X-Mcp-Secret-<ENV_VAR_NAME> headers.
+  // Access them via env: e.g. env["API_KEY"] for X-Mcp-Secret-API-KEY header.
+  const apiKey = env["API_KEY"] ?? "";
+
+  switch (name) {
+    case "example_tool": {
+      const input = String(args.input ?? "");
+      // TODO: implement your tool logic here
+      return { result: "echo: " + input };
+    }
+    default:
+      throw new Error("Unknown tool: " + name);
+  }
+}
+
+// ─── JSON-RPC 2.0 handler ────────────────────────────────────────────────────
+
+export default {
+  async fetch(request: Request, rawEnv: unknown): Promise<Response> {
+    const env = rawEnv as Record<string, string>;
+
+    // Health check
+    if (request.method === "GET") {
+      return Response.json({ ok: true, server: "mcp-%s", tools: TOOLS.length });
+    }
+
+    // Collect secrets injected by Aerostack gateway
+    const secrets: Record<string, string> = {};
+    for (const [header, value] of request.headers.entries()) {
+      const lower = header.toLowerCase();
+      if (lower.startsWith("x-mcp-secret-")) {
+        const envKey = lower.replace("x-mcp-secret-", "").toUpperCase().replace(/-/g, "_");
+        secrets[envKey] = value;
+      }
+    }
+    const mergedEnv = { ...env, ...secrets };
+
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json() as Record<string, unknown>;
+    } catch {
+      return Response.json({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null }, { status: 400 });
+    }
+
+    const { jsonrpc, id, method, params } = body as {
+      jsonrpc: string;
+      id: unknown;
+      method: string;
+      params: Record<string, unknown>;
+    };
+
+    if (jsonrpc !== "2.0") {
+      return Response.json({ jsonrpc: "2.0", error: { code: -32600, message: "Invalid Request" }, id: null }, { status: 400 });
+    }
+
+    try {
+      switch (method) {
+        case "initialize":
+          return Response.json({
+            jsonrpc: "2.0",
+            id,
+            result: {
+              protocolVersion: "2024-11-05",
+              capabilities: { tools: {} },
+              serverInfo: { name: "mcp-%s", version: "1.0.0" },
+            },
+          });
+
+        case "tools/list":
+          return Response.json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
+
+        case "tools/call": {
+          const toolName = String((params as any)?.name ?? "");
+          const toolArgs = ((params as any)?.arguments ?? {}) as Record<string, unknown>;
+          const result = await callTool(toolName, toolArgs, mergedEnv);
+          return Response.json({
+            jsonrpc: "2.0",
+            id,
+            result: {
+              content: [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result) }],
+            },
+          });
+        }
+
+        default:
+          return Response.json({
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32601, message: "Method not found" },
+          });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return Response.json({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32603, message: msg },
+      });
+    }
+  },
+};
+`, name, name, name)
+
+			// aerostack.toml
+			aerostackToml := fmt.Sprintf(`name = "mcp-%s"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+`, name)
+
+			// package.json
+			packageJSON := fmt.Sprintf(`{
+  "name": "aerostack-mcp-%s",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "esbuild src/index.ts --bundle --outfile=dist/worker.js --format=esm --target=esnext --platform=neutral",
+    "deploy": "aerostack deploy mcp %s"
+  },
+  "devDependencies": {
+    "esbuild": "latest",
+    "typescript": "latest",
+    "wrangler": "latest",
+    "@cloudflare/workers-types": "latest"
+  }
+}
+`, name, name)
+
+			// tsconfig.json
+			tsconfig := `{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["@cloudflare/workers-types"],
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"]
+}
+`
+
+			files := map[string]string{
+				filepath.Join("src", "index.ts"): indexTs,
+				"aerostack.toml":                 aerostackToml,
+				"package.json":                   packageJSON,
+				"tsconfig.json":                  tsconfig,
+			}
+
+			for rel, content := range files {
+				dest := filepath.Join(outDir, rel)
+				if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+					return fmt.Errorf("create dir for %s: %w", rel, err)
+				}
+				if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
+					return fmt.Errorf("write %s: %w", rel, err)
+				}
+				fmt.Printf("  created %s\n", filepath.Join("MCP", "mcp-"+name, rel))
+			}
+
+			fmt.Println()
+			printer.Success("MCP server scaffolded at %s", outDir)
+			fmt.Println()
+			printer.Hint("Next steps:")
+			fmt.Printf("  1. Edit %s\n", filepath.Join(outDir, "src", "index.ts"))
+			fmt.Printf("  2. aerostack deploy mcp %s\n", name)
+			return nil
+		},
+	}
+}
+
+// NewMcpPullCommand creates 'aerostack mcp pull <slug>'.
+func NewMcpPullCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pull <slug>",
+		Short: "Pull an MCP server from Aerostack to your local directory",
+		Long: `Downloads an MCP server's source files from Aerostack and writes them locally.
+
+Examples:
+  aerostack mcp pull mcp-github            (pulls your own @you/mcp-github)
+  aerostack mcp pull @johndoe/mcp-github   (pulls another developer's server)`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			slug := args[0]
+
+			apiKey := credentials.GetAPIKey()
+			if apiKey == "" {
+				return fmt.Errorf("not logged in. Run: aerostack login")
+			}
+
+			// If no @ prefix, resolve to own scoped slug via the API
+			scopedSlug := slug
+			if !strings.HasPrefix(scopedSlug, "@") {
+				// Let the API prefix with the authenticated user's username
+				baseName := strings.TrimPrefix(scopedSlug, "mcp-")
+				scopedSlug = "mcp-" + baseName
+			}
+
+			printer.Step("Pulling %s...", scopedSlug)
+
+			resp, err := api.McpPull(apiKey, scopedSlug)
+			if err != nil {
+				return err
+			}
+
+			// Derive local directory name from slug
+			// @username/mcp-name → name
+			baseName := resp.Slug
+			if idx := strings.LastIndex(baseName, "/"); idx >= 0 {
+				baseName = baseName[idx+1:]
+			}
+			baseName = strings.TrimPrefix(baseName, "mcp-")
+
+			cwd, _ := os.Getwd()
+			var outDir string
+			if filepath.Base(cwd) == "MCP" {
+				outDir = filepath.Join(cwd, "mcp-"+baseName)
+			} else {
+				outDir = filepath.Join(cwd, "MCP", "mcp-"+baseName)
+			}
+
+			if err := os.MkdirAll(filepath.Join(outDir, "src"), 0755); err != nil {
+				return fmt.Errorf("create dirs: %w", err)
+			}
+
+			files := map[string]string{
+				filepath.Join("src", "index.ts"): resp.SrcIndexTs,
+				"aerostack.toml":                 resp.AerostackToml,
+				"package.json":                   resp.PackageJson,
+			}
+
+			for rel, content := range files {
+				dest := filepath.Join(outDir, rel)
+				if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+					return fmt.Errorf("create dir for %s: %w", rel, err)
+				}
+				if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
+					return fmt.Errorf("write %s: %w", rel, err)
+				}
+			}
+
+			fmt.Println()
+			printer.Success("Pulled to %s", outDir)
+			printer.Hint("Edit files, then run: aerostack deploy mcp %s", baseName)
+			return nil
+		},
+	}
 }
 
 func transportDesc(a *mcpconvert.AnalysisResult) string {

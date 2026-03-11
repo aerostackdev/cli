@@ -528,10 +528,11 @@ func CommunityPublish(apiKey, id string) error {
 type CommunityDeployMcpResponse struct {
 	Success     bool   `json:"success"`
 	Hosted      bool   `json:"hosted"`
-	WorkerURL   string `json:"worker_url"`
+	WorkerURL   string `json:"url"`
 	MCPServerID string `json:"mcp_server_id"`
 	Slug        string `json:"slug"`
 	Env         string `json:"env"`
+	ToolsCount  int    `json:"tools_count"`
 	Message     string `json:"message"`
 }
 
@@ -573,11 +574,57 @@ func CommunityDeployMcp(apiKey string, workerPath string, slug string, env strin
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 && resp.StatusCode != 210 {
+	if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 210 {
 		return nil, fmt.Errorf("mcp deploy failed (%d): %s", resp.StatusCode, string(body))
 	}
 
 	var out CommunityDeployMcpResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+type CommunityDeploySkillResponse struct {
+	Success bool   `json:"success"`
+	URL     string `json:"url"`
+	Slug    string `json:"slug"`
+	Env     string `json:"env"`
+	Message string `json:"message"`
+}
+
+func CommunityDeploySkill(apiKey string, name string, content string, env string) (*CommunityDeploySkillResponse, error) {
+	url := getBaseURL() + "/api/v1/cli/deploy/skill"
+
+	payload := map[string]string{
+		"name":    name,
+		"content": content,
+		"env":     env,
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		return nil, fmt.Errorf("skill deploy failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var out CommunityDeploySkillResponse
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, err
 	}
@@ -866,6 +913,88 @@ func WorkspaceAddServer(apiKey, workspaceID, serverID string) error {
 		return fmt.Errorf("failed to add skill to workspace (%d): %s", resp.StatusCode, string(body))
 	}
 	return nil
+}
+
+// ─── MCP Pull ─────────────────────────────────────────────────────────────────
+
+// McpPullResponse holds the files returned by GET /api/v1/cli/mcp/:slug.
+type McpPullResponse struct {
+	Slug          string `json:"slug"`
+	Name          string `json:"name"`
+	SrcIndexTs    string `json:"src_index_ts"`
+	AerostackToml string `json:"aerostack_toml"`
+	PackageJson   string `json:"package_json"`
+}
+
+// McpPull fetches an MCP server's source files from Aerostack.
+// slug may be scoped (@username/mcp-name) or bare (mcp-name — API prefixes with caller's username).
+func McpPull(apiKey, slug string) (*McpPullResponse, error) {
+	url := fmt.Sprintf("%s/api/v1/cli/mcp/%s", getBaseURL(), slug)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 404 {
+		return nil, fmt.Errorf("MCP server '%s' not found", slug)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("mcp pull failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var out McpPullResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &out, nil
+}
+
+// ─── Skill Pull ───────────────────────────────────────────────────────────────
+
+// SkillPullResponse holds the files returned by GET /api/v1/cli/skill/:slug.
+type SkillPullResponse struct {
+	Slug    string `json:"slug"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+// SkillPull fetches a skill's SKILL.md content from Aerostack.
+// slug may be scoped (@username/skill-name) or bare (skill-name — API prefixes with caller's username).
+func SkillPull(apiKey, slug string) (*SkillPullResponse, error) {
+	url := fmt.Sprintf("%s/api/v1/cli/skill/%s", getBaseURL(), slug)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 404 {
+		return nil, fmt.Errorf("skill '%s' not found", slug)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("skill pull failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var out SkillPullResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &out, nil
 }
 
 // TeamCheckMembership checks if the authenticated caller is a member of ownerUsername's team.

@@ -2,10 +2,13 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/aerostackdev/cli/internal/api"
 	"github.com/aerostackdev/cli/internal/credentials"
+	"github.com/aerostackdev/cli/internal/printer"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +33,132 @@ Examples:
 	cmd.AddCommand(NewSkillPublishCommand())
 	cmd.AddCommand(NewSkillListCommand())
 	cmd.AddCommand(NewSkillRemoveCommand())
+	cmd.AddCommand(NewSkillInitCommand())
+	cmd.AddCommand(NewSkillPullCommand())
 	return cmd
+}
+
+// ─── skill init ───────────────────────────────────────────────────────────────
+
+// NewSkillInitCommand creates 'aerostack skill init <name>'.
+func NewSkillInitCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "init <name>",
+		Short: "Scaffold a new skill SKILL.md",
+		Long: `Creates skills/<name>/SKILL.md with a boilerplate template.
+
+Examples:
+  aerostack skill init github-pr-review
+  aerostack skill init deploy-helper`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := strings.ToLower(strings.TrimSpace(args[0]))
+			name = strings.TrimPrefix(name, "skill-")
+
+			printer.Header("Skill Init")
+
+			skillDir := filepath.Join("skills", name)
+			if err := os.MkdirAll(skillDir, 0755); err != nil {
+				return fmt.Errorf("create directory: %w", err)
+			}
+
+			// Title-case the name for display
+			title := strings.ReplaceAll(name, "-", " ")
+			title = strings.Title(title) //nolint:staticcheck
+
+			content := fmt.Sprintf(`# %s Skill
+
+## Description
+Brief description of what this skill does.
+
+## Trigger Patterns
+- When user asks to...
+- Triggered by...
+
+## Behavior
+Step-by-step what the skill does.
+
+## Examples
+- Example usage 1
+- Example usage 2
+
+## Configuration
+- No configuration required
+`, title)
+
+			dest := filepath.Join(skillDir, "SKILL.md")
+			if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
+				return fmt.Errorf("write SKILL.md: %w", err)
+			}
+
+			fmt.Println()
+			printer.Success("Skill scaffolded at %s", dest)
+			fmt.Println()
+			printer.Hint("Next steps:")
+			fmt.Printf("  1. Edit %s\n", dest)
+			fmt.Printf("  2. aerostack deploy skill %s\n", name)
+			return nil
+		},
+	}
+}
+
+// ─── skill pull ───────────────────────────────────────────────────────────────
+
+// NewSkillPullCommand creates 'aerostack skill pull <slug>'.
+func NewSkillPullCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pull <slug>",
+		Short: "Pull a skill from Aerostack to your local directory",
+		Long: `Downloads a skill's SKILL.md from Aerostack and writes it locally.
+
+Examples:
+  aerostack skill pull github-pr-review          (pulls your own skill)
+  aerostack skill pull @johndoe/github-pr-review (pulls another developer's skill)`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			slug := args[0]
+
+			apiKey := credentials.GetAPIKey()
+			if apiKey == "" {
+				return fmt.Errorf("not logged in. Run: aerostack login")
+			}
+
+			scopedSlug := slug
+			if !strings.HasPrefix(scopedSlug, "@") {
+				baseName := strings.TrimPrefix(scopedSlug, "skill-")
+				scopedSlug = "skill-" + baseName
+			}
+
+			printer.Step("Pulling %s...", scopedSlug)
+
+			resp, err := api.SkillPull(apiKey, scopedSlug)
+			if err != nil {
+				return err
+			}
+
+			// Derive local name from slug: @username/skill-name → name
+			baseName := resp.Slug
+			if idx := strings.LastIndex(baseName, "/"); idx >= 0 {
+				baseName = baseName[idx+1:]
+			}
+			baseName = strings.TrimPrefix(baseName, "skill-")
+
+			skillDir := filepath.Join("skills", baseName)
+			if err := os.MkdirAll(skillDir, 0755); err != nil {
+				return fmt.Errorf("create directory: %w", err)
+			}
+
+			dest := filepath.Join(skillDir, "SKILL.md")
+			if err := os.WriteFile(dest, []byte(resp.Content), 0644); err != nil {
+				return fmt.Errorf("write SKILL.md: %w", err)
+			}
+
+			fmt.Println()
+			printer.Success("Pulled to %s", dest)
+			printer.Hint("Edit the file, then run: aerostack deploy skill %s", baseName)
+			return nil
+		},
+	}
 }
 
 // ─── skill install ────────────────────────────────────────────────────────────
