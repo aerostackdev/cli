@@ -11,6 +11,8 @@ import (
 
 	"encoding/json"
 
+	"github.com/aerostackdev/cli/internal/api"
+	"github.com/aerostackdev/cli/internal/credentials"
 	"github.com/aerostackdev/cli/internal/printer"
 	"github.com/aerostackdev/cli/internal/templates"
 	"github.com/charmbracelet/huh"
@@ -275,6 +277,25 @@ func initProject(name, templateName, dbName string, runDev bool) error {
 	printer.Success("Project initialized successfully")
 	fmt.Println()
 
+	// Offer to link to a project right now if logged in with account key
+	if cred, err := credentials.Load(); err == nil && cred != nil && cred.APIKey != "" {
+		if validateResp, err := api.Validate(cred.APIKey); err == nil && validateResp.KeyType == "account" {
+			var doLink bool
+			linkQ := huh.NewConfirm().
+				Title("Link to an Aerostack project now?").
+				Description("Picks a project interactively and writes project_id into aerostack.toml.").
+				Value(&doLink)
+			if err := huh.NewForm(huh.NewGroup(linkQ)).Run(); err == nil && doLink {
+				// Run linkInteractive in the new project directory
+				origDir, _ := os.Getwd()
+				if err := os.Chdir(name); err == nil {
+					_ = linkInteractive(true)
+					_ = os.Chdir(origDir)
+				}
+			}
+		}
+	}
+
 	// Single copy-paste command so user doesn't have to cd then run dev manually
 	if dbName == "neon" {
 		printer.Step("Next steps")
@@ -282,8 +303,11 @@ func initProject(name, templateName, dbName string, runDev bool) error {
 		fmt.Printf("  cd %s && aerostack db neon create %s-db --add-to-config && aerostack dev\n", name, name)
 	} else {
 		printer.Step("Next steps")
-		printer.Hint("Start developing (single command):")
+		printer.Hint("Start developing:")
 		fmt.Printf("  cd %s && aerostack dev\n", name)
+		fmt.Println()
+		printer.Hint("Deploy (link project first if you haven't):")
+		fmt.Printf("  cd %s && aerostack link --write-toml && aerostack deploy\n", name)
 	}
 	fmt.Println()
 

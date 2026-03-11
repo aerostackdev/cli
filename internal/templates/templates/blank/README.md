@@ -60,6 +60,14 @@ curl -X POST http://localhost:8787/test/queue
 
 Once your project is configured in the Aerostack dashboard, deploy with:
 
+**First time only — link to your Aerostack project:**
+
+```bash
+aerostack link --write-toml
+```
+
+This picks your project interactively and writes `project_id` into `aerostack.toml` so every future deploy goes to the right project automatically.
+
 ```bash
 aerostack deploy
 ```

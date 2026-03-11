@@ -85,6 +85,14 @@ curl http://localhost:8787/rooms/demo-room
 
 ### 3. Deploy
 
+**First time only — link to your Aerostack project:**
+
+```bash
+aerostack link --write-toml
+```
+
+This picks your project interactively and writes `project_id` into `aerostack.toml` so every future deploy goes to the right project automatically.
+
 ```bash
 aerostack deploy
 ```

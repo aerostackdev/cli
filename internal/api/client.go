@@ -255,11 +255,14 @@ type DeployError struct {
 	} `json:"error"`
 }
 
-func Deploy(apiKey string, files map[string]string, env string, projectName string, isPublic bool, isPrivate bool, bindingsJSON string, compatDate string, compatFlags []string) (*DeployResponse, error) {
+func Deploy(apiKey string, files map[string]string, env string, projectName string, projectID string, isPublic bool, isPrivate bool, bindingsJSON string, compatDate string, compatFlags []string) (*DeployResponse, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 
 	_ = w.WriteField("env", env)
+	if projectID != "" {
+		_ = w.WriteField("project_id", projectID)
+	}
 	if projectName != "" {
 		_ = w.WriteField("name", projectName)
 	}
@@ -379,6 +382,51 @@ func CreateProject(apiKey, name string) (*CreateProjectResponse, error) {
 		return nil, err
 	}
 	return &out, nil
+}
+
+type ProjectListItem struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+	URL  string `json:"url"`
+}
+
+func ListProjects(apiKey string) ([]ProjectListItem, error) {
+	url := getBaseURL() + "/api/v1/cli/projects"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		var errBody struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(body, &errBody)
+		msg := errBody.Error.Message
+		if msg == "" {
+			msg = string(body)
+		}
+		return nil, fmt.Errorf("list projects failed (%d): %s", resp.StatusCode, msg)
+	}
+
+	var out struct {
+		Projects []ProjectListItem `json:"projects"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return out.Projects, nil
 }
 
 // ─── Community Functions ───────────────────────────────────────────────────

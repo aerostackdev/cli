@@ -1,4 +1,5 @@
 name = "{{.ProjectName}}"
+# project_id = ""  # Pin deploys to a specific project: run 'aerostack link --write-toml'
 
 [main]
 path = "api/index.ts"

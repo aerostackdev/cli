@@ -196,13 +196,19 @@ func deployService(service, env string, all bool, ownAccount bool, isPublic bool
 	}
 
 	// Case B: Account Key (root access)
-	// 1. Check if linked
+	// Priority 1: explicit project_id in aerostack.toml
+	if cfg.ProjectID != "" {
+		printer.Step("Using project from aerostack.toml: %s", cfg.ProjectID)
+		return deployToAerostack(cfg, env, cred.APIKey, cfg.ProjectID, service, isPublic, isPrivate)
+	}
+
+	// Priority 2: locally linked project (.aerostack/project.json)
 	projLink, _ := link.Load()
 	if projLink != nil && projLink.ProjectID != "" {
 		return deployToAerostack(cfg, env, cred.APIKey, projLink.ProjectID, service, isPublic, isPrivate)
 	}
 
-	// 2. Not linked: Auto-create or find project by name
+	// Priority 3: Auto-create or find project by name
 	projName := cfg.Name
 	if projName == "" {
 		projName = filepath.Base(filepath.Dir(".")) // fallback to folder name? or just error?
@@ -429,7 +435,7 @@ module.exports = proxy;
 	bData, _ := json.Marshal(bindingsPayload)
 	bindingsJSON := string(bData)
 
-	deployResp, err := api.Deploy(apiKey, files, env, serviceName, isPublic, isPrivate, bindingsJSON, cfg.CompatibilityDate, cfg.CompatibilityFlags)
+	deployResp, err := api.Deploy(apiKey, files, env, serviceName, projectID, isPublic, isPrivate, bindingsJSON, cfg.CompatibilityDate, cfg.CompatibilityFlags)
 	if err != nil {
 		return err
 	}

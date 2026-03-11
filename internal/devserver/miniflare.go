@@ -21,6 +21,7 @@ type Service struct {
 type AerostackConfig struct {
 	Name               string
 	ProjectSlug        string
+	ProjectID          string // explicit project_id = "uuid" in aerostack.toml
 	Main               string
 	CompatibilityDate  string
 	CompatibilityFlags []string
@@ -93,6 +94,7 @@ func ParseAerostackToml(path string) (*AerostackConfig, error) {
 	if cfg.ProjectSlug == "" {
 		cfg.ProjectSlug = extractTomlString(content, "slug")
 	}
+	cfg.ProjectID = extractTomlString(content, "project_id")
 	cfg.Main = extractTomlString(content, "main")
 	if d := extractTomlString(content, "compatibility_date"); d != "" {
 		cfg.CompatibilityDate = d
