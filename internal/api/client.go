@@ -15,6 +15,11 @@ var httpClient = &http.Client{
 	Timeout: 30 * time.Second,
 }
 
+// httpClientLong is used for operations that deploy Workers (CF API can take 60-90s)
+var httpClientLong = &http.Client{
+	Timeout: 120 * time.Second,
+}
+
 func getBaseURL() string {
 	return BaseURL()
 }
@@ -567,7 +572,7 @@ func CommunityDeployMcp(apiKey string, workerPath string, slug string, env strin
 	req.Header.Set("X-API-Key", apiKey)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpClientLong.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -586,20 +591,23 @@ func CommunityDeployMcp(apiKey string, workerPath string, slug string, env strin
 }
 
 type CommunityDeploySkillResponse struct {
-	Success bool   `json:"success"`
-	URL     string `json:"url"`
-	Slug    string `json:"slug"`
-	Env     string `json:"env"`
-	Message string `json:"message"`
+	Success     bool   `json:"success"`
+	URL         string `json:"url"`
+	Slug        string `json:"slug"`
+	Env         string `json:"env"`
+	Message     string `json:"message"`
+	FunctionURL string `json:"function_url,omitempty"`
+	FunctionID  string `json:"function_id,omitempty"`
 }
 
-func CommunityDeploySkill(apiKey string, name string, content string, env string) (*CommunityDeploySkillResponse, error) {
+func CommunityDeploySkill(apiKey string, name string, content string, functionCode string, env string) (*CommunityDeploySkillResponse, error) {
 	url := getBaseURL() + "/api/v1/cli/deploy/skill"
 
 	payload := map[string]string{
-		"name":    name,
-		"content": content,
-		"env":     env,
+		"name":          name,
+		"content":       content,
+		"function_code": functionCode,
+		"env":           env,
 	}
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {

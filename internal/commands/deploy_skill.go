@@ -19,13 +19,15 @@ func NewDeploySkillCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "skill [name]",
 		Short: "Deploy a skill to Aerostack cloud",
-		Long: `Deploy a skill to Aerostack's infrastructure by name.
-Reads the SKILL.md file from the skills directory and publishes it to the registry.
+		Long: `Deploy a skill to Aerostack's infrastructure.
+
+For static skills (SKILL.md only): publishes to the marketplace.
+For function-backed skills (SKILL.md + src/index.ts): auto-deploys the function
+to your project, links it to the skill, and publishes both to the marketplace.
 
 Examples:
-  aerostack deploy skill new-mcp
-  aerostack deploy skill debug-worker
-  aerostack deploy skill new-mcp --env staging`,
+  aerostack deploy skill daily-digest
+  aerostack deploy skill pr-gate --env staging`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// 1. Load API Key
@@ -34,77 +36,95 @@ Examples:
 				return fmt.Errorf("not logged in. Run 'aerostack login' first")
 			}
 
-			// 2. Resolve name and SKILL.md path
+			// 2. Resolve skill name and directory
 			var name string
-			var skillPath string
+			var skillDir string
+
+			cwd, _ := os.Getwd()
 
 			if len(args) > 0 {
 				name = args[0]
-				cwd, _ := os.Getwd()
-
-				// Look for skills/{name}/SKILL.md relative to cwd
-				candidate := filepath.Join(cwd, "skills", name, "SKILL.md")
-				if _, err := os.Stat(candidate); err == nil {
-					skillPath = candidate
+				// Look for skills/{name}/ relative to cwd
+				candidate := filepath.Join(cwd, "skills", name)
+				if _, err := os.Stat(filepath.Join(candidate, "SKILL.md")); err == nil {
+					skillDir = candidate
 				} else {
-					// Maybe we're already inside the skill dir or skills/
-					candidate2 := filepath.Join(cwd, name, "SKILL.md")
-					if _, err := os.Stat(candidate2); err == nil {
-						skillPath = candidate2
+					// Maybe we're inside the skill dir or skills/
+					candidate2 := filepath.Join(cwd, name)
+					if _, err := os.Stat(filepath.Join(candidate2, "SKILL.md")); err == nil {
+						skillDir = candidate2
+					} else if _, err := os.Stat(filepath.Join(cwd, "SKILL.md")); err == nil {
+						skillDir = cwd
 					} else {
-						// Maybe SKILL.md is in current dir
-						candidate3 := filepath.Join(cwd, "SKILL.md")
-						if _, err := os.Stat(candidate3); err == nil {
-							skillPath = candidate3
-						} else {
-							return fmt.Errorf("SKILL.md not found for skill '%s'. Expected at skills/%s/SKILL.md", name, name)
-						}
+						return fmt.Errorf("SKILL.md not found for skill '%s'. Expected at skills/%s/SKILL.md", name, name)
 					}
 				}
 			} else {
-				// No name: look for SKILL.md in current directory
-				cwd, _ := os.Getwd()
-				candidate := filepath.Join(cwd, "SKILL.md")
-				if _, err := os.Stat(candidate); err != nil {
+				// No name: use current directory
+				if _, err := os.Stat(filepath.Join(cwd, "SKILL.md")); err != nil {
 					return fmt.Errorf("SKILL.md not found in current directory. Provide a skill name or run from a skill directory")
 				}
-				skillPath = candidate
+				skillDir = cwd
 				name = filepath.Base(cwd)
 			}
 
-			// Strip common prefixes if user typed full dir name
 			name = strings.TrimPrefix(name, "skill-")
 
 			// 3. Read SKILL.md
+			skillMdPath := filepath.Join(skillDir, "SKILL.md")
 			printer.Step("Reading SKILL.md for '%s'...", name)
-			content, err := os.ReadFile(skillPath)
+			skillContent, err := os.ReadFile(skillMdPath)
 			if err != nil {
 				return fmt.Errorf("failed to read SKILL.md: %w", err)
 			}
-			if len(strings.TrimSpace(string(content))) == 0 {
+			if len(strings.TrimSpace(string(skillContent))) == 0 {
 				return fmt.Errorf("SKILL.md is empty")
 			}
 
-			// 4. Deploy
-			printer.Step("Deploying skill '%s' to Aerostack (%s)...", name, environment)
-			resp, err := api.CommunityDeploySkill(apiKey, name, string(content), environment)
+			// 4. Detect if function-backed (src/index.ts exists)
+			functionCode := ""
+			srcPath := filepath.Join(skillDir, "src", "index.ts")
+			if _, err := os.Stat(srcPath); err == nil {
+				printer.Step("Detected function-backed skill — reading src/index.ts...")
+				code, err := os.ReadFile(srcPath)
+				if err != nil {
+					return fmt.Errorf("failed to read src/index.ts: %w", err)
+				}
+				functionCode = string(code)
+				printer.Hint("Function code loaded (%d bytes)", len(functionCode))
+			}
+
+			// 5. Deploy
+			if functionCode != "" {
+				printer.Step("Deploying function + skill '%s' to Aerostack (%s)...", name, environment)
+			} else {
+				printer.Step("Deploying skill '%s' to Aerostack (%s)...", name, environment)
+			}
+
+			resp, err := api.CommunityDeploySkill(apiKey, name, string(skillContent), functionCode, environment)
 			if err != nil {
 				return err
 			}
 
 			fmt.Println()
-			printer.Success("Skill deployed successfully!")
-			fmt.Println(printer.KeyVal("Name", name))
-			fmt.Println(printer.KeyVal("URL", resp.URL))
-			fmt.Println(printer.KeyVal("Status", "Published"))
+			if resp.FunctionURL != "" {
+				printer.Success("Function deployed!")
+				fmt.Println(printer.KeyVal("Function URL", resp.FunctionURL))
+			}
+			printer.Success("Skill published to marketplace!")
+			fmt.Println(printer.KeyVal("Skill URL", resp.URL))
+			fmt.Println(printer.KeyVal("Slug", resp.Slug))
 			fmt.Println()
-			printer.Hint("Your skill is now available in the Aerostack marketplace.")
+			if resp.FunctionURL != "" {
+				printer.Hint("Function is linked to skill — users who add this skill will invoke your function.")
+			} else {
+				printer.Hint("Your skill is now available in the Aerostack marketplace.")
+			}
 
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVarP(&environment, "env", "e", "production", "Target environment (staging/production)")
-
 	return cmd
 }

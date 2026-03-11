@@ -42,14 +42,20 @@ Examples:
 
 // NewSkillInitCommand creates 'aerostack skill init <name>'.
 func NewSkillInitCommand() *cobra.Command {
-	return &cobra.Command{
+	var withFunction bool
+
+	cmd := &cobra.Command{
 		Use:   "init <name>",
-		Short: "Scaffold a new skill SKILL.md",
-		Long: `Creates skills/<name>/SKILL.md with a boilerplate template.
+		Short: "Scaffold a new skill",
+		Long: `Scaffold a new skill directory.
+
+Two templates available:
+  static (default)  — SKILL.md only (AI behavior definition, no custom code)
+  function-backed   — SKILL.md + src/index.ts (custom logic deployed as a function)
 
 Examples:
   aerostack skill init github-pr-review
-  aerostack skill init deploy-helper`,
+  aerostack skill init daily-digest --function`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := strings.ToLower(strings.TrimSpace(args[0]))
@@ -62,11 +68,10 @@ Examples:
 				return fmt.Errorf("create directory: %w", err)
 			}
 
-			// Title-case the name for display
 			title := strings.ReplaceAll(name, "-", " ")
 			title = strings.Title(title) //nolint:staticcheck
 
-			content := fmt.Sprintf(`# %s Skill
+			skillMd := fmt.Sprintf(`# %s Skill
 
 ## Description
 Brief description of what this skill does.
@@ -86,20 +91,78 @@ Step-by-step what the skill does.
 - No configuration required
 `, title)
 
-			dest := filepath.Join(skillDir, "SKILL.md")
-			if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
+			if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillMd), 0644); err != nil {
 				return fmt.Errorf("write SKILL.md: %w", err)
 			}
 
-			fmt.Println()
-			printer.Success("Skill scaffolded at %s", dest)
-			fmt.Println()
-			printer.Hint("Next steps:")
-			fmt.Printf("  1. Edit %s\n", dest)
-			fmt.Printf("  2. aerostack deploy skill %s\n", name)
+			if withFunction {
+				srcDir := filepath.Join(skillDir, "src")
+				if err := os.MkdirAll(srcDir, 0755); err != nil {
+					return fmt.Errorf("create src directory: %w", err)
+				}
+
+				indexTs := fmt.Sprintf(`/**
+ * %s Skill — Function Logic
+ *
+ * Called when the skill is invoked. Request body contains
+ * the user's configured secrets and any event payload.
+ */
+export default {
+    async fetch(request: Request): Promise<Response> {
+        const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+
+        // TODO: implement your skill logic here
+        // const secrets = body.secrets as Record<string, string>;
+        // const payload = body.payload;
+
+        return Response.json({ success: true, result: 'Hello from %s!' });
+    },
+};
+`, title, name)
+
+				if err := os.WriteFile(filepath.Join(srcDir, "index.ts"), []byte(indexTs), 0644); err != nil {
+					return fmt.Errorf("write src/index.ts: %w", err)
+				}
+
+				aerostackJson := fmt.Sprintf(`{
+    "name": "%s",
+    "version": "1.0.0",
+    "description": "%s skill",
+    "category": "skills",
+    "tags": []
+}
+`, name, title)
+				if err := os.WriteFile(filepath.Join(skillDir, "aerostack.json"), []byte(aerostackJson), 0644); err != nil {
+					return fmt.Errorf("write aerostack.json: %w", err)
+				}
+
+				fmt.Println()
+				printer.Success("Function-backed skill scaffolded at skills/%s/", name)
+				fmt.Printf("  skills/%s/SKILL.md       ← marketplace listing\n", name)
+				fmt.Printf("  skills/%s/src/index.ts   ← function logic\n", name)
+				fmt.Printf("  skills/%s/aerostack.json ← metadata\n", name)
+				fmt.Println()
+				printer.Hint("Next steps:")
+				fmt.Printf("  1. Edit skills/%s/SKILL.md\n", name)
+				fmt.Printf("  2. Write your logic in skills/%s/src/index.ts\n", name)
+				fmt.Printf("  3. aerostack deploy skill %s\n", name)
+			} else {
+				fmt.Println()
+				printer.Success("Static skill scaffolded at skills/%s/SKILL.md", name)
+				fmt.Println()
+				printer.Hint("Next steps:")
+				fmt.Printf("  1. Edit skills/%s/SKILL.md\n", name)
+				fmt.Printf("  2. aerostack deploy skill %s\n", name)
+				fmt.Println()
+				printer.Hint("Want custom function logic? Re-run with --function flag.")
+			}
+
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&withFunction, "function", false, "Scaffold a function-backed skill (SKILL.md + src/index.ts)")
+	return cmd
 }
 
 // ─── skill pull ───────────────────────────────────────────────────────────────
