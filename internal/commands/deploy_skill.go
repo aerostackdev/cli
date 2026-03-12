@@ -81,12 +81,21 @@ Examples:
 				return fmt.Errorf("SKILL.md is empty")
 			}
 
-			// 4. Detect if function-backed (src/index.ts exists)
+			// 4. Detect if function-backed (prefer pre-compiled src/index.js, fall back to src/index.ts)
 			functionCode := ""
-			srcPath := filepath.Join(skillDir, "src", "index.ts")
-			if _, err := os.Stat(srcPath); err == nil {
+			srcJsPath := filepath.Join(skillDir, "src", "index.js")
+			srcTsPath := filepath.Join(skillDir, "src", "index.ts")
+			if _, err := os.Stat(srcJsPath); err == nil {
+				printer.Step("Detected function-backed skill — reading src/index.js (pre-compiled)...")
+				code, err := os.ReadFile(srcJsPath)
+				if err != nil {
+					return fmt.Errorf("failed to read src/index.js: %w", err)
+				}
+				functionCode = string(code)
+				printer.Hint("Function code loaded (%d bytes)", len(functionCode))
+			} else if _, err := os.Stat(srcTsPath); err == nil {
 				printer.Step("Detected function-backed skill — reading src/index.ts...")
-				code, err := os.ReadFile(srcPath)
+				code, err := os.ReadFile(srcTsPath)
 				if err != nil {
 					return fmt.Errorf("failed to read src/index.ts: %w", err)
 				}
