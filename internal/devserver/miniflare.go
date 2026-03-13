@@ -134,11 +134,33 @@ func ParseAerostackToml(path string) (*AerostackConfig, error) {
 			cfg.Main = "src/index.ts"
 		}
 	}
+	// Sanitize name to be wrangler-compatible (lowercase alphanumeric + dashes)
+	cfg.Name = sanitizeWorkerName(cfg.Name)
 	if cfg.Name == "" {
 		cfg.Name = "aerostack-app"
 	}
 
 	return cfg, nil
+}
+
+// sanitizeWorkerName ensures a name is valid for Wrangler (lowercase alphanumeric + dashes).
+func sanitizeWorkerName(name string) string {
+	name = strings.ToLower(name)
+	var result []byte
+	for _, c := range []byte(name) {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
+			result = append(result, c)
+		} else {
+			result = append(result, '-')
+		}
+	}
+	// Collapse consecutive dashes and trim leading/trailing dashes
+	s := string(result)
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	s = strings.Trim(s, "-")
+	return s
 }
 
 func extractTomlString(content, key string) string {

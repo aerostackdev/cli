@@ -81,8 +81,9 @@ export async function initCommand(args: string[]) {
     const spinner = ora('Creating project files...').start();
 
     try {
+        const safeName = projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
         const tokens = {
-            PROJECT_NAME: projectName,
+            PROJECT_NAME: safeName || 'aerostack-app',
         };
 
         // Copy all template files with token substitution

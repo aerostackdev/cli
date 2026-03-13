@@ -177,6 +177,27 @@ func TestInterpolateEnvVars_Mixed(t *testing.T) {
 	}
 }
 
+// ─── sanitizeWorkerName ─────────────────────────────────────────
+
+func TestSanitizeWorkerName(t *testing.T) {
+	tests := []struct{ input, want string }{
+		{"my-app", "my-app"},
+		{"API-neon+db-neon", "api-neon-db-neon"},
+		{"Hello World!", "hello-world"},
+		{"test__app", "test-app"},
+		{"--leading--", "leading"},
+		{"UPPERCASE", "uppercase"},
+		{"a+b=c&d", "a-b-c-d"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		got := sanitizeWorkerName(tt.input)
+		if got != tt.want {
+			t.Errorf("sanitizeWorkerName(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 // ─── parseD1Databases ───────────────────────────────────────────
 
 func TestParseD1Databases_SingleBlock(t *testing.T) {
