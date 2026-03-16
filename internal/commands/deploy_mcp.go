@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/aerostackdev/cli/internal/api"
 	"github.com/aerostackdev/cli/internal/credentials"
+	"github.com/aerostackdev/cli/internal/devserver"
 	"github.com/aerostackdev/cli/internal/modules/mcpconvert"
 	"github.com/aerostackdev/cli/internal/printer"
 	"github.com/spf13/cobra"
@@ -65,16 +67,33 @@ Examples:
 				projectDir = cwd
 			}
 
-			// 3. Build
+			// 3. Parse aerostack.toml for metadata (env vars, description, category, tags)
+			var envVars []string
+			var description, category, tags string
+			tomlPath := filepath.Join(projectDir, "aerostack.toml")
+			if cfg, err := devserver.ParseAerostackToml(tomlPath); err == nil {
+				envVars = cfg.EnvVars
+				description = cfg.Description
+				category = cfg.Category
+				if len(cfg.Tags) > 0 {
+					tagsBytes, _ := json.Marshal(cfg.Tags)
+					tags = string(tagsBytes)
+				}
+			}
+
+			// 4. Build
 			printer.Step("Building MCP server 'mcp-%s'...", name)
 			workerPath, err := mcpconvert.BundleWorker(projectDir)
 			if err != nil {
 				return fmt.Errorf("build failed: %w", err)
 			}
 
-			// 4. Deploy
+			// 5. Deploy
 			printer.Step("Deploying 'mcp-%s' to Aerostack (%s)...", name, environment)
-			resp, err := api.CommunityDeployMcp(apiKey, workerPath, "mcp-"+name, environment)
+			if len(envVars) > 0 {
+				printer.Step("  Required credentials: %s", strings.Join(envVars, ", "))
+			}
+			resp, err := api.CommunityDeployMcp(apiKey, workerPath, "mcp-"+name, environment, envVars, description, category, tags)
 			if err != nil {
 				return err
 			}

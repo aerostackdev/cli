@@ -228,7 +228,7 @@ Examples:
 					slug = mcpconvert.SanitizeSlug(analysis.PackageName)
 				}
 
-				resp, err := api.CommunityDeployMcp(apiKey, bundledPath, slug, "production")
+				resp, err := api.CommunityDeployMcp(apiKey, bundledPath, slug, "production", nil, "", "", "")
 				if err != nil {
 					return fmt.Errorf("deploy failed: %w", err)
 				}

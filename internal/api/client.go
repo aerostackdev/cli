@@ -541,12 +541,25 @@ type CommunityDeployMcpResponse struct {
 	Message     string `json:"message"`
 }
 
-func CommunityDeployMcp(apiKey string, workerPath string, slug string, env string) (*CommunityDeployMcpResponse, error) {
+func CommunityDeployMcp(apiKey string, workerPath string, slug string, env string, envVars []string, description string, category string, tags string) (*CommunityDeployMcpResponse, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 
 	_ = w.WriteField("slug", slug)
 	_ = w.WriteField("env", env)
+	if len(envVars) > 0 {
+		envVarsJSON, _ := json.Marshal(envVars)
+		_ = w.WriteField("env_vars", string(envVarsJSON))
+	}
+	if description != "" {
+		_ = w.WriteField("description", description)
+	}
+	if category != "" {
+		_ = w.WriteField("category", category)
+	}
+	if tags != "" {
+		_ = w.WriteField("tags", tags)
+	}
 
 	workerData, err := os.ReadFile(workerPath)
 	if err != nil {

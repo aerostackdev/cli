@@ -28,6 +28,10 @@ type AerostackConfig struct {
 	BuildCommand       string
 	DevCommand         string
 	DeployCommand      string
+	Description        string   // MCP description
+	Category           string   // MCP category
+	Tags               []string // MCP tags
+	EnvVars            []string // Required secret env var names (env = ["KEY1", "KEY2"])
 	D1Databases        []D1Database
 	PostgresDatabases  []PostgresDatabase
 	// EnvOverrides: env-specific D1 database_id overrides (from [env.staging], [env.production])
@@ -100,6 +104,10 @@ func ParseAerostackToml(path string) (*AerostackConfig, error) {
 		cfg.CompatibilityDate = d
 	}
 	cfg.CompatibilityFlags = extractTomlStringList(content, "compatibility_flags")
+	cfg.Description = extractTomlString(content, "description")
+	cfg.Category = extractTomlString(content, "category")
+	cfg.Tags = extractTomlStringList(content, "tags")
+	cfg.EnvVars = extractTomlStringList(content, "env")
 
 	// Parse [[d1_databases]] blocks
 	cfg.D1Databases = parseD1Databases(content)
