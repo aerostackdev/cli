@@ -17,7 +17,6 @@ import (
 	"github.com/aerostackdev/cli/internal/modules/deploy"
 	"github.com/aerostackdev/cli/internal/pkg"
 	"github.com/aerostackdev/cli/internal/printer"
-	"github.com/aerostackdev/cli/internal/provision"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +24,6 @@ import (
 func NewDeployCommand() *cobra.Command {
 	var environment string
 	var allServices bool
-	var ownAccount bool
 	var isPublic bool
 	var isPrivate bool
 	var syncSecrets bool
@@ -33,20 +31,15 @@ func NewDeployCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy [service-name]",
 		Short: "Deploy services to Aerostack cloud",
-		Long: `Deploy your services with two clear options:
+		Long: `Deploy your service to Aerostack's infrastructure.
 
-  Default (Aerostack):  aerostack deploy
-    Deploys to Aerostack's infrastructure. Requires login.
-    Run 'aerostack login' first. Shows in admin Custom Logic.
-
-  Your own account:     aerostack deploy --cloudflare
-    Deploys to your Cloudflare account via wrangler.
-    Requires: npx wrangler login (or CLOUDFLARE_API_TOKEN)
+  Requires login: run 'aerostack login' first.
+  Deployed services appear in your admin dashboard under Custom Logic.
 
 Examples:
   aerostack deploy --env staging
   aerostack deploy --env production
-  aerostack deploy --cloudflare --env staging`,
+  aerostack deploy --public`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Initialize Agent for Deploy logic
 			cwd, _ := os.Getwd()
@@ -74,7 +67,7 @@ Examples:
 			}
 
 			// 2. Actual Deploy Logic
-			if err := deployService(serviceName, environment, allServices, ownAccount, isPublic, isPrivate, syncSecrets); err != nil {
+			if err := deployService(serviceName, environment, allServices, isPublic, isPrivate, syncSecrets); err != nil {
 				importStrings := true // just a flag to know we might need strings package
 				_ = importStrings
 
@@ -97,7 +90,7 @@ Examples:
 
 	cmd.Flags().StringVarP(&environment, "env", "e", "staging", "Target environment (staging/production)")
 	cmd.Flags().BoolVar(&allServices, "all", false, "Deploy all services")
-	cmd.Flags().BoolVar(&ownAccount, "cloudflare", false, "Deploy to your Cloudflare account (default: Aerostack)")
+	// --cloudflare flag removed: all deploys go through Aerostack dispatch namespace
 	cmd.Flags().BoolVar(&isPublic, "public", false, "Make the deployed service publicly accessible")
 	cmd.Flags().BoolVar(&isPrivate, "private", false, "Make the deployed service private (requires authentication)")
 	cmd.Flags().BoolVar(&syncSecrets, "sync-secrets", false, "Push non-standard .dev.vars keys as secrets to the target environment before deploying")
@@ -109,7 +102,7 @@ Examples:
 	return cmd
 }
 
-func deployService(service, env string, all bool, ownAccount bool, isPublic bool, isPrivate bool, syncSecrets bool) error {
+func deployService(service, env string, all bool, isPublic bool, isPrivate bool, syncSecrets bool) error {
 	// Validate env
 	if env != "staging" && env != "production" {
 		return fmt.Errorf("invalid env %q: use staging or production", env)
@@ -144,48 +137,14 @@ func deployService(service, env string, all bool, ownAccount bool, isPublic bool
 		}
 	}
 
-	// Path 1: Deploy to user's own Cloudflare account (--cloudflare)
-	if ownAccount {
-		projectRoot, _ := os.Getwd()
-		if projectRoot == "" {
-			projectRoot = "."
-		}
-		printer.Step("Checking resources in aerostack.toml...")
-		if err := provision.ProvisionCloudflareResources(cfg, env, projectRoot); err != nil {
-			return fmt.Errorf("provision resources: %w", err)
-		}
-		// Re-parse config in case provision updated aerostack.toml
-		cfg, err = devserver.ParseAerostackToml("aerostack.toml")
-		if err != nil {
-			return fmt.Errorf("failed to re-parse config: %w", err)
-		}
-		// Keep generated wrangler.toml inside .aerostack/ to avoid cluttering project root
-		if err := os.MkdirAll(".aerostack", 0755); err != nil {
-			return fmt.Errorf("failed to create .aerostack directory: %w", err)
-		}
-		wranglerPath := filepath.Join(".aerostack", "wrangler.toml")
-		if err := devserver.GenerateWranglerToml(cfg, wranglerPath); err != nil {
-			return fmt.Errorf("failed to generate wrangler.toml: %w", err)
-		}
-		fmt.Println()
-		printer.Step("Deploying to your Cloudflare account (%s)...", env)
-		if err := devserver.RunWranglerDeploy(wranglerPath, env); err != nil {
-			return err
-		}
-		fmt.Println()
-		printer.Success("Deployment successful!")
-		printSecretsReminder(cfg, env)
-		return nil
-	}
-
-	// Path 2: Deploy to Aerostack (default). Requires login.
+	// Deploy to Aerostack. Requires login.
 	cred, _ := credentials.Load()
 	if cred == nil || cred.APIKey == "" {
-		return fmt.Errorf("not logged in. Run 'aerostack login' to deploy to Aerostack.\nTo deploy to your Cloudflare account instead, use: aerostack deploy --cloudflare")
+		return fmt.Errorf("not logged in. Run 'aerostack login' first, then retry.")
 	}
 	validateResp, err := api.Validate(cred.APIKey)
 	if err != nil {
-		return fmt.Errorf("API key invalid or unreachable: %w\nRun 'aerostack login' to fix. Or use --cloudflare to deploy to your Cloudflare account.", err)
+		return fmt.Errorf("API key invalid or unreachable: %w\nRun 'aerostack login' to re-authenticate.", err)
 	}
 
 	// Case A: Project Key (scoped to single project)
