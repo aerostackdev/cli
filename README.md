@@ -5,15 +5,13 @@
 
 The official CLI for building, testing, and deploying Aerostack applications. Scaffold projects from templates, run a full local development environment, manage databases, and deploy to Aerostack Cloud — all from a single command-line tool.
 
-> **Status**: Early Development — Core scaffolding in progress
-
 ## Features
 
 - **Zero-Config Local Dev** — Start building immediately with `aerostack dev`, powered by an embedded workerd runtime
 - **Multi-DB Orchestration** — Unified interface for D1, Neon Postgres, and external databases
 - **Built-in Testing** — Test framework with service mocking and isolated environments
 - **AI-Powered Fixes** — Automatic error detection and fix suggestions via integrated LLM agent
-- **20+ Starter Templates** — Production-ready templates for blogs, e-commerce, SaaS, and more
+- **20+ Starter Templates** — Production-ready templates for APIs, SaaS, AI agents, and more
 - **One-Command Deploy** — Ship to staging or production with `aerostack deploy`
 
 ## Installation
@@ -27,13 +25,13 @@ curl -fsSL https://get.aerostack.dev | sh
 **npm / pnpm / yarn / bun**
 
 ```bash
-npm install -g aerostack
+npm install -g @aerostack/cli
 # or
-pnpm add -g aerostack
+pnpm add -g @aerostack/cli
 # or
-yarn global add aerostack
+yarn global add @aerostack/cli
 # or
-bun install -g aerostack
+bun install -g @aerostack/cli
 ```
 
 **npx (no install)**
