@@ -27,6 +27,7 @@ Examples:
 	cmd.AddCommand(NewWorkspaceListCommand())
 	cmd.AddCommand(NewWorkspaceCreateCommand())
 	cmd.AddCommand(NewWorkspaceUseCommand())
+	cmd.AddCommand(NewWorkspaceTestCommand())
 	return cmd
 }
 
@@ -175,4 +176,112 @@ func NewWorkspaceCreateCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&setActive, "use", false, "Set this workspace as active immediately")
 	return cmd
+}
+
+// ─── workspace test ──────────────────────────────────────────────────────────
+
+// NewWorkspaceTestCommand creates 'aerostack workspace test [slug]'.
+func NewWorkspaceTestCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "test [slug]",
+		Short: "Test workspace connectivity by listing all available tools",
+		Long: `Calls tools/list on the workspace gateway and displays all discovered tools.
+If no slug is provided, uses the active workspace.
+
+Examples:
+  aerostack workspace test
+  aerostack workspace test my-workspace`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			apiKey := credentials.GetAPIKey()
+			if apiKey == "" {
+				return fmt.Errorf("not logged in. Run: aerostack login")
+			}
+
+			// Resolve workspace: arg or active
+			var targetSlug string
+			if len(args) > 0 {
+				targetSlug = args[0]
+			} else {
+				cfg, _ := credentials.LoadConfig()
+				if cfg != nil && cfg.ActiveWorkspace != "" {
+					targetSlug = cfg.ActiveWorkspace
+				} else {
+					return fmt.Errorf("no workspace specified and no active workspace. Run: aerostack workspace use <slug>")
+				}
+			}
+
+			// Find workspace ID from slug
+			workspaces, err := api.WorkspaceList(apiKey)
+			if err != nil {
+				return err
+			}
+
+			var wsID string
+			for _, ws := range workspaces {
+				if ws.Slug == targetSlug {
+					wsID = ws.ID
+					break
+				}
+			}
+			if wsID == "" {
+				return fmt.Errorf("workspace '%s' not found", targetSlug)
+			}
+
+			fmt.Printf("Testing workspace '%s'...\n\n", targetSlug)
+
+			tools, err := api.WorkspaceTestTools(apiKey, wsID)
+			if err != nil {
+				return fmt.Errorf("test failed: %w", err)
+			}
+
+			if len(tools) == 0 {
+				fmt.Println("No tools found. Add MCP servers or skills to this workspace first.")
+				return nil
+			}
+
+			fmt.Printf("%-36s %-20s %s\n", "TOOL", "SERVER", "DESCRIPTION")
+			fmt.Printf("%-36s %-20s %s\n", "----", "------", "-----------")
+			for _, t := range tools {
+				name := t.Name
+				if len(name) > 34 {
+					name = name[:31] + "..."
+				}
+				desc := t.Description
+				if len(desc) > 50 {
+					desc = desc[:47] + "..."
+				}
+				server := t.ServerSlug
+				if server == "" {
+					// Extract from namespaced name
+					if idx := len(name); idx > 0 {
+						parts := splitOnce(t.Name, "__")
+						if len(parts) == 2 {
+							server = parts[0]
+						}
+					}
+				}
+				if len(server) > 18 {
+					server = server[:15] + "..."
+				}
+				fmt.Printf("%-36s %-20s %s\n", name, server, desc)
+			}
+
+			fmt.Printf("\n%d tools available across workspace '%s'\n", len(tools), targetSlug)
+			return nil
+		},
+	}
+}
+
+// splitOnce splits s on the first occurrence of sep, returning [before, after].
+// If sep is not found, returns [s].
+func splitOnce(s, sep string) []string {
+	idx := 0
+	for i := 0; i <= len(s)-len(sep); i++ {
+		if s[i:i+len(sep)] == sep {
+			idx = i
+			return []string{s[:idx], s[idx+len(sep):]}
+		}
+	}
+	return []string{s}
 }

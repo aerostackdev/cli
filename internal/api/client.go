@@ -936,6 +936,42 @@ func WorkspaceAddServer(apiKey, workspaceID, serverID string) error {
 	return nil
 }
 
+// WorkspaceTestTools calls tools/list on a workspace and returns the tools.
+func WorkspaceTestTools(apiKey, workspaceID string) ([]WorkspaceToolInfo, error) {
+	url := fmt.Sprintf("%s/api/community/mcp/workspaces/%s/tools", getBaseURL(), workspaceID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", apiKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("workspace test failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Tools []WorkspaceToolInfo `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	return result.Tools, nil
+}
+
+// WorkspaceToolInfo holds info about a tool in a workspace.
+type WorkspaceToolInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	ServerSlug  string `json:"server_slug"`
+}
+
 // ─── MCP Pull ─────────────────────────────────────────────────────────────────
 
 // McpPullResponse holds the files returned by GET /api/v1/cli/mcp/:slug.
